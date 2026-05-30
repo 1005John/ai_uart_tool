@@ -151,5 +151,5 @@ PASS/FAIL 结果 → KnowledgeTriple (知识三元组)
 | SQLite 而非 PostgreSQL | 单机运行，零配置部署 | PostgreSQL（需要额外服务） |
 | 密钥外置到 ~/.ai_uart_keys.json | 项目开源安全 | 环境变量（不方便多 key 管理） |
 | 灵畿通过 CLI 而非 API | 灵畿不提供 REST API | — |
-| Excel 而非数据库存储测试用例 | 测试工程师习惯 Excel 编辑 | 全部导入 DB（用户不习惯） |
-| 单文件 webui.py（1500 行）暂不拆分 | 初期快速迭代 | 拆分为独立 handler 文件（待重构） |
+| 串口端口名不做路径改写 | pyserial 原生接受各平台格式（COM3 / /dev/ttyUSB0） | 按平台分支处理（太复杂） |
+| lc 查找用 shutil.which() | 替代 subprocess(["which"])，跨平台 | — |

@@ -108,12 +108,24 @@ def scan_fn():
     ports = serial.list_ports()
     items = []
     for p in ports:
+        port_name = p['port'] or ''
         desc = p['description'] or ''
-        label = f"{p['port']}  {desc}"
-        if 'USB' in desc or 'ACM' in p['port']:
+        hwid = p.get('hwid', '') or ''
+
+        # 跨平台 USB 设备标记
+        is_hardware = (
+            'USB' in desc.upper() or
+            'ACM' in port_name or
+            'COM' in port_name.upper() or
+            'usb' in desc.lower() or
+            'usb' in hwid.lower() or
+            'VID' in hwid or
+            bool(desc and desc != 'n/a')
+        )
+
+        label = f"{port_name}  {desc}" if desc and desc != 'n/a' else port_name
+        if is_hardware:
             label = f"🔵 {label}"
-        if not desc or desc == 'n/a':
-            continue
         items.append(label)
     return gr.Dropdown(choices=items or ["无可用串口"])
 
@@ -121,11 +133,10 @@ def scan_fn():
 def connect_fn(port_str, baud):
     if not port_str or port_str == "无可用串口" or port_str is None:
         return "⚠️ 请先扫描并选择端口"
-    import re
-    port = port_str.split()[0].replace("🔵", "").replace("🔴", "").strip()
-    port = re.sub(r'[^\w/]', '', port)
-    if not port.startswith('/'):
-        port = '/dev/' + port
+    # 从下拉标签中提取端口名：格式为 "🔵 COM3  USB Serial Port" 或 "/dev/ttyUSB0  ..."
+    port = port_str.replace("🔵", "").replace("🔴", "").strip().split()[0]
+    # 跨平台端口名：Windows 是 COM3 格式，Linux/macOS 是 /dev/ttyXXX 格式
+    # 不做任何路径改写，pyserial 原生接受所有平台的端口名
     try:
         ok = serial.open(port, int(baud))
         if ok:

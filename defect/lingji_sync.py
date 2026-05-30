@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import shutil
 import subprocess
 import time
 from typing import Optional
@@ -35,15 +36,13 @@ class LingjiSync:
         self.lc_path = self._find_lc()
 
     def _find_lc(self) -> str:
-        """查找 lc 命令路径"""
-        try:
-            result = subprocess.run(["which", "lc"], capture_output=True,
-                                    text=True, timeout=5)
-            if result.returncode == 0:
-                return result.stdout.strip()
-        except:
-            pass
-        return "lc"
+        """查找 lc 命令路径（跨平台）"""
+        path = shutil.which("lc")
+        if path:
+            return path
+        # Windows 下也尝试 .cmd
+        path = shutil.which("lc.cmd")
+        return path or "lc"
 
     # ── 登录校验 ──
 
