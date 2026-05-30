@@ -1,6 +1,6 @@
 # AI Native UART Tool
 
-基于 AI 的 UART AT 指令测试工具，运行在树莓派 5 / Ubuntu 上。
+基于 AI 的 UART AT 指令测试工具，支持 Windows / macOS / Linux (树莓派/Ubuntu/Debian)。
 
 ## 架构
 
@@ -14,6 +14,14 @@ webui.py (Gradio 6.15)  ← 主入口
   ├── knowledge/        ← 知识图谱
   └── test_at_link/     ← AT 指令集（27个通信模块）
 ```
+
+## ⚠️ 代码修改必做
+
+每次代码修改完成后：
+1. 检查 `REQUIREMENTS.md` — 功能需求状态是否需要更新
+2. 检查 `DESIGN.md` — 架构/模块/决策是否需要同步
+3. 检查 `CHANGELOG.md` — 记录本次变更
+4. 三者有变化立即更新并提交
 
 ## 启动
 
