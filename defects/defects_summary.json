@@ -1,0 +1,23 @@
+{
+  "export_time": "2026-05-27T16:14:26.882520",
+  "total": 1,
+  "defects": [
+    {
+      "id": 1,
+      "test_session_id": null,
+      "test_case_run_id": null,
+      "title": "【AT+QMTSUB】单主题订阅-QoS0 测试失败",
+      "description": "【测试环境】\n模组: ML307C-DC\n服务器: 8.137.154.246:1883\n\n【复现步骤】\n1. AT+QMTOPEN=0,\"8.137.154.246\",1883\n2. AT+QMTCONN=0,\"client001\"\n3. AT+QMTSUB=0,1,\"sensor/temp\",0\n\n【预期结果】\n+QMTSUB: 0,1,0,0\nOK\n\n【实际结果】\n+CME ERROR: 50\n\n【AI根因分析】\n参数错误，可能是connect_id未建立",
+      "severity": 2,
+      "priority": 1,
+      "status": "local",
+      "lingji_id": null,
+      "lingji_url": null,
+      "local_file": "/home/jf/ai_uart_tool/defects/defect_0001.json",
+      "confirmed_by": null,
+      "created_at": "2026-05-27 08:14:26",
+      "submitted_at": null,
+      "synced_at": null
+    }
+  ]
+}

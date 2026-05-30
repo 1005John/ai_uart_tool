@@ -1,0 +1,26 @@
+[
+  {
+    "source": "custom",
+    "at_cmd": "ATE",
+    "case_name": "打开回显",
+    "expected": "OK",
+    "timeout": 10,
+    "delay": null
+  },
+  {
+    "source": "custom",
+    "at_cmd": "AT+CSQ",
+    "case_name": "读取信号",
+    "expected": "OK",
+    "timeout": 10,
+    "delay": null
+  },
+  {
+    "source": "custom",
+    "at_cmd": "AT",
+    "case_name": "AT",
+    "expected": "OK",
+    "timeout": 10,
+    "delay": null
+  }
+]

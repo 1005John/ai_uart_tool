@@ -1,0 +1,52 @@
+{
+  "timestamp": "2026-05-29T14:07:12.538233",
+  "suite_name": "a1",
+  "summary": "✅ 0 | ❌ 5 | 共 5 条",
+  "cases": [
+    {
+      "name": "设置标准Connection报头",
+      "sheet": "AT+MHTTPCFG_header",
+      "at_command": "AT+MHTTPCFG=\"header\",0,\"['Connection: close']\"",
+      "actual": "+CME ERROR: 652",
+      "status": "FAIL",
+      "duration_ms": 10003,
+      "fail_reason": "超时(10s)无响应，检测到错误: +CME ERROR: 652"
+    },
+    {
+      "name": "设置标准Content-Type报头",
+      "sheet": "AT+MHTTPCFG_header",
+      "at_command": "AT+MHTTPCFG=\"header\",0,\"['Content-Type: application/json']\"",
+      "actual": "+CME ERROR: 652",
+      "status": "FAIL",
+      "duration_ms": 10004,
+      "fail_reason": "超时(10s)无响应，检测到错误: +CME ERROR: 652"
+    },
+    {
+      "name": "cfg_header字符串输入字符串输出验证",
+      "sheet": "AT+MHTTPCFG_header",
+      "at_command": "AT+MHTTPCFG=\"header\",0,\"['User-Agent: Test']\"",
+      "actual": "+CME ERROR: 652",
+      "status": "FAIL",
+      "duration_ms": 10005,
+      "fail_reason": "超时(10s)无响应，检测到错误: +CME ERROR: 652"
+    },
+    {
+      "name": "cfg_header字符串输入十六进制输出验证",
+      "sheet": "AT+MHTTPCFG_header",
+      "at_command": "AT+MHTTPCFG=\"header\",0,\"['User-Agent: Test']\"",
+      "actual": "+CME ERROR: 652",
+      "status": "FAIL",
+      "duration_ms": 10003,
+      "fail_reason": "超时(10s)无响应，检测到错误: +CME ERROR: 652"
+    },
+    {
+      "name": "cfg_header十六进制输入字符串输出验证",
+      "sheet": "AT+MHTTPCFG_header",
+      "at_command": "AT+MHTTPCFG=\"header\",0,\"['557365722D4167656E743A2054657374']\"",
+      "actual": "+CME ERROR: 652",
+      "status": "FAIL",
+      "duration_ms": 10002,
+      "fail_reason": "超时(10s)无响应，检测到错误: +CME ERROR: 652"
+    }
+  ]
+}

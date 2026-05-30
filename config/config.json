@@ -1,0 +1,7 @@
+{
+  "deepseek": {
+    "api_key": "sk-567a579569834bf8a4ee0f971e1bfa14",
+    "base_url": "https://api.deepseek.com/v1",
+    "model": "deepseek-v4-flash"
+  }
+}
