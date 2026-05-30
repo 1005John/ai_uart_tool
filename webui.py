@@ -18,7 +18,6 @@ import json
 init_db()
 session = ChatSession()
 serial = session.serial
-_chat_history = []
 
 EXEC_RESULT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "last_exec_result.json")
 TEST_SET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "test_sets")
@@ -810,461 +809,385 @@ def submit_checked_to_lingji_fn(project_code, handler_id, table_data):
 
 # ── 构建 UI ──
 
-with gr.Blocks(title="AI Native UART Tool", fill_height=True) as ui:
+with gr.Blocks(title="AI Native UART Tool") as ui:
     gr.Markdown(f"# 🔧 AI Native UART Tool  `{get_db_path()}`")
 
-    # ── 对话标签页 ──
-    with gr.Tab("💬 对话"):
-        with gr.Row(equal_height=False):
-            with gr.Column(scale=3):
-                chat_display = gr.Markdown("等待输入...")
-                msg = gr.Textbox(placeholder="输入消息，回车发送...")
-                with gr.Row():
-                    gr.Button("发送", variant="primary", scale=1).click(
-                        lambda m: ("", _render_chat_display()) if not m.strip() else
-                        (_chat_history.append((m, "\n\n".join(session.handle(m)))) or ("", _render_chat_display())),
-                        [msg], [msg, chat_display])
-                    gr.Button("清空对话", scale=1).click(
-                        lambda: (_chat_history.clear() or ("", "等待输入...")), None, [msg, chat_display])
-                msg.submit(
-                    lambda m: ("", _render_chat_display()) if not m.strip() else
-                    (_chat_history.append((m, "\n\n".join(session.handle(m)))) or ("", _render_chat_display())),
-                    [msg], [msg, chat_display])
-                with gr.Row():
-                    gr.Button("📋 MQTT计划").click(
-                        lambda: (_chat_history.append(("测一下MQTT的P0", "\n\n".join(session.handle("测一下MQTT的P0"))))
-                                 or ("", _render_chat_display())), None, [msg, chat_display])
-                    gr.Button("📋 TCP计划").click(
-                        lambda: (_chat_history.append(("测一下TCP的P0", "\n\n".join(session.handle("测一下TCP的P0"))))
-                                 or ("", _render_chat_display())), None, [msg, chat_display])
-                    gr.Button("📊 知识统计").click(
-                        lambda: (_chat_history.append(("知识图谱统计", session.knowledge_agent.query("统计")))
-                                 or ("", _render_chat_display())), None, [msg, chat_display])
-            with gr.Column(scale=1, min_width=250):
-                gr.Markdown("### 🔌 串口控制")
-                port_dd = gr.Dropdown(label="端口", choices=[])
-                baud_in = gr.Number(label="波特率", value=115200, precision=0)
-                status_box = gr.Textbox(label="状态", value="未连接")
-                with gr.Row():
-                    gr.Button("🔍 扫描").click(scan_fn, None, port_dd)
-                    gr.Button("✅ 连接").click(connect_fn, [port_dd, baud_in], status_box)
-                    gr.Button("❌ 断开").click(disconnect_fn, None, status_box)
-
-    # ── 测试方案标签页（三层架构） ──
-    with gr.Tab("📋 测试方案") as plan_tab:
-        gr.Markdown("### 📋 测试方案管理 | 快速选择已有方案执行，或新建方案")
-
-        # ════════════════════════════════════════════
-        # 区域①：快捷执行 + 方案管理
-        # ════════════════════════════════════════════
-    # ── 测试方案标签页（三框下钻） ──
-    with gr.Tab("📋 测试方案") as plan_tab:
-        gr.Markdown("### 📋 测试方案 · 三框下钻（点击方案→查看用例集→查看用例）")
-        gr.Markdown("---")
-
-        # ════ 全局状态 ════
-        _selected_plan = None
-        _selected_set = None
-        _current_plan_s = {"name": "", "test_sets": [], "loop": 1}
-        _exec_cases_cache_s = []
-
-        # ══════════════════════════════════
-        # 框①：方案列表
-        # ══════════════════════════════════
-        gr.Markdown("### 📦 ① 测试方案列表")
-        plan_table = gr.Dataframe(
-            value=[[False, p] for p in list_plans()],
-            headers=["☑", "方案名称"],
-            datatype=["bool", "str"],
-            column_count=2, interactive=True, row_count=20,
-            label="点击方案行查看其用例集",
-        )
+    # ── 测试方案与执行标签页 ──
+    # ── 测试方案与执行标签页 ──
+    with gr.Tab("📋 测试方案与执行") as plan_tab:
+        # ── 串口控制 ──
         with gr.Row():
-            exec_plan_btn = gr.Button("🚀 执行选中方案", variant="primary", scale=1)
-            del_plan_btn2 = gr.Button("🗑️ 删除选中方案", scale=1)
-        with gr.Row():
-            new_plan_name_in = gr.Textbox(label="新方案名称", placeholder="输入名称后点创建", scale=2)
-            create_plan_btn = gr.Button("➕ 新建方案", variant="primary", scale=1)
-        plan_status = gr.Markdown("### 点击方案行进入下一层")
-
+            port_dd = gr.Dropdown(label="端口", choices=[], scale=3)
+            baud_in = gr.Number(label="波特率", value=115200, precision=0, scale=1)
+            status_box = gr.Textbox(label="状态", value="未连接", scale=2)
+            gr.Button("🔍 扫描", scale=1).click(scan_fn, None, port_dd)
+            gr.Button("✅ 连接", scale=1).click(connect_fn, [port_dd, baud_in], status_box)
+            gr.Button("❌ 断开", scale=1).click(disconnect_fn, None, status_box)
         gr.Markdown("---")
 
         # ══════════════════════════════════
-        # 框②：用例集列表（按选中方案展示）
+        # 子标签：用例集库 | 方案管理
         # ══════════════════════════════════
-        set_header = gr.Markdown("### 📁 ② 用例集列表（请先在方案列表中选择一个方案）")
-        set_table = gr.Dataframe(
-            headers=["☑", "用例集名称"],
-            datatype=["bool", "str"],
-            column_count=2, interactive=True, row_count=20,
-            label="点击用例集行查看其用例",
-        )
-        with gr.Row():
-            del_set_btn2 = gr.Button("🗑️ 删除选中用例集", scale=1)
-        with gr.Row():
-            new_set_name_in = gr.Textbox(label="新用例集名称", placeholder="输入名称后点创建", scale=2)
-            create_set_btn = gr.Button("➕ 创建并添加到方案", variant="primary", scale=1)
-        set_status = gr.Markdown("")
+        with gr.Tabs():
+            # ── 用例集库 ──────────────────
+            with gr.Tab("📦 用例集库"):
+                with gr.Row():
+                    with gr.Column(scale=1, min_width=200):
+                        gr.Markdown("### 用例集列表")
+                        set_radio = gr.Radio(label="选择用例集", choices=[], interactive=True)
+                        with gr.Row():
+                            new_set_name = gr.Textbox(label="新用例集名称", placeholder="输入名称", scale=2)
+                            new_set_btn = gr.Button("➕ 新建", scale=1)
+                        del_set_btn = gr.Button("🗑️ 删除选中用例集", scale=1)
+                        set_lib_status = gr.Markdown("")
 
-        gr.Markdown("---")
+                    with gr.Column(scale=2, min_width=350):
+                        gr.Markdown("### 用例列表")
+                        set_case_html = gr.HTML('<div style="color:#888;padding:20px">请选择用例集</div>')
+                        gr.Markdown("---")
+                        with gr.Row():
+                            case_name_in = gr.Textbox(label="名称", placeholder="用例名称", scale=2)
+                            case_cmd_in = gr.Textbox(label="AT指令", placeholder="AT+CMD", scale=2)
+                            case_timeout_in = gr.Number(label="超时", value=10, precision=0, scale=1)
+                            case_delay_in = gr.Number(label="延迟", value=0, precision=0, scale=1)
+                            add_case_btn = gr.Button("➕ 添加", variant="primary", scale=1)
+                            del_case_idx = gr.Number(label="删#", value=1, precision=0, scale=1)
+                            del_case_btn = gr.Button("🗑️", scale=1)
+                        set_case_status = gr.Markdown("")
 
-        # ══════════════════════════════════
-        # 框③：用例列表（按选中用例集展示）
-        # ══════════════════════════════════
-        case_header = gr.Markdown("### ✏️ ③ 用例列表（请先在用例集列表中选择一个用例集）")
-        case_table = gr.Dataframe(
-            headers=["☑", "用例名称", "指令", "超时(s)", "delay(ms)"],
-            datatype=["bool", "str", "str", "str", "str"],
-            column_count=5, interactive=True, row_count=30,
-            label="点击单元格编辑，点下方按钮新增/保存/删除",
-        )
-        with gr.Row():
-            add_case_btn = gr.Button("➕ 新增一行", variant="primary", scale=1)
-            save_case_btn = gr.Button("💾 保存修改", scale=1)
-            del_case_btn = gr.Button("🗑️ 删除选中", scale=1)
-        case_status = gr.Markdown("")
+                # ── 用例集库事件 ──
+                def _clean_set_names():
+                    return sorted([s.rstrip('_') for s in list_test_sets()])
 
-        # ══════════════════════════════════
-        # ── 辅助函数 ──
-        # ══════════════════════════════════
+                def refresh_set_radio():
+                    sets = _clean_set_names()
+                    return gr.Radio(choices=[(s, s) for s in sets])
 
-        def _refresh_plan_table():
-            """刷新方案列表"""
-            rows = [[False, p] for p in list_plans()]
-            return rows
+                def render_cases_html(set_name):
+                    """渲染用例集为 HTML 表格（无背景色，继承主题）"""
+                    if not set_name:
+                        return '<div style="opacity:0.5;padding:20px;font-size:16px">请选择用例集</div>'
+                    ts = load_test_set(set_name)
+                    cases = ts.get('cases', []) if ts else []
+                    if not cases:
+                        return f'<div style="padding:12px;border:1px solid var(--border-color-primary, #ddd);border-radius:6px"><b>{set_name}</b> 暂无用例，请添加</div>'
 
-        def _load_sets_for_plan(plan_name):
-            """加载某方案下的用例集列表到框②"""
-            global _selected_plan
-            if not plan_name:
-                _selected_plan = None
-                return ("### 📁 ② 用例集列表（请先在方案列表中选择一个方案）",
-                        [], "", [])
-            plan = load_plan(plan_name)
-            if not plan:
-                return ("### 📁 ② 用例集列表（请先在方案列表中选择一个方案）",
-                        [], f"### ❌ 方案「{plan_name}」不存在", [])
-            _selected_plan = plan_name
-            set_names = plan.get('test_set_names', [])
-            rows = [[False, s] for s in set_names]
-            return (f"### 📁 ② 用例集列表  «当前方案: {plan_name}»",
-                    rows, "", [])
+                    rows_html = ""
+                    for i, c in enumerate(cases, 1):
+                        name = c.get('case_name', '')[:30]
+                        cmd = (c.get('at_cmd', '') or c.get('module', ''))[:45]
+                        to = c.get('timeout', 10)
+                        dl = c.get('delay', '') if c.get('delay') is not None else ''
+                        rows_html += f'''<tr>
+                            <td style="text-align:center;opacity:0.5;width:30px;padding:6px 4px">{i}</td>
+                            <td style="padding:6px 8px">{name}</td>
+                            <td style="padding:6px 8px;font-family:monospace;font-size:13px"><code>{cmd}</code></td>
+                            <td style="text-align:center;width:50px;padding:6px 4px">{to}s</td>
+                            <td style="text-align:center;width:55px;padding:6px 4px">{dl}ms</td>
+                        </tr>'''
 
-        def _load_cases_for_set(set_name):
-            """加载某用例集的用例到框③"""
-            global _selected_set
-            if not set_name:
-                _selected_set = None
-                return ("### ✏️ ③ 用例列表（请先在用例集列表中选择一个用例集）",
-                        [], "")
-            ts = load_test_set(set_name)
-            if not ts:
-                return (f"### ✏️ ③ 用例列表（请先在用例集列表中选择一个用例集）",
-                        [], f"### ❌ 用例集「{set_name}」不存在")
-            _selected_set = set_name
-            cases = ts.get('cases', [])
-            rows = []
-            for c in cases:
-                src = "📦" if c.get('source') == 'library' else "✏️"
-                name = f"{src} {c.get('case_name', '')}"[:40]
-                cmd = c.get('at_cmd', '') or c.get('module', '')
-                to = str(c.get('timeout', 10))
-                dl = str(c.get('delay', '')) if c.get('delay') is not None else ''
-                rows.append([False, name, cmd[:45], to, dl])
-            return (f"### ✏️ ③ 用例列表  «当前用例集: {set_name}»（{len(cases)} 条）",
-                    rows, "")
+                    return f'''<div>
+                        <div style="margin-bottom:8px;font-weight:600;font-size:15px">
+                            📋 {set_name} · {len(cases)} 条
+                        </div>
+                        <table style="width:100%;border-collapse:collapse;font-size:14px">
+                            <thead>
+                                <tr style="border-bottom:2px solid var(--border-color-primary, #ccc)">
+                                    <th style="padding:6px;width:30px">#</th>
+                                    <th style="padding:6px;text-align:left">用例名称</th>
+                                    <th style="padding:6px;text-align:left">AT指令</th>
+                                    <th style="padding:6px;width:50px">超时</th>
+                                    <th style="padding:6px;width:55px">延迟</th>
+                                </tr>
+                            </thead>
+                            <tbody>{rows_html}</tbody>
+                        </table>
+                    </div>'''
 
-        # ══════════════════════════════════
-        # ── 事件绑定 ──
-        # ══════════════════════════════════
+                def on_set_select(set_name):
+                    return render_cases_html(set_name), ""
 
-        # ── 框①：方案列表 ──
+                set_radio.change(on_set_select, [set_radio], [set_case_html, set_case_status])
 
-        def on_plan_select(evt: gr.SelectData):
-            """点击方案行：下钻"""
-            if evt.index is None:
-                return (_refresh_plan_table(), plan_status,
-                        *([None]*5))
-            row_idx, _ = evt.index if isinstance(evt.index, (list, tuple)) else (evt.index, 0)
-            plans = list_plans()
-            if row_idx >= len(plans):
-                return (_refresh_plan_table(), "### ❌ 无效行",
-                        *([None]*5))
-            clicked = plans[row_idx]
+                def create_set(name):
+                    if not name or not name.strip():
+                        return refresh_set_radio(), "", "### ❌ 请输入名称"
+                    name = name.strip()
+                    if name not in _clean_set_names():
+                        save_test_set(name, [])
+                        return refresh_set_radio(), "", f"### ✅ 已创建「{name}」"
+                    return refresh_set_radio(), "", f"### ⏭️ 「{name}」已存在"
 
-            # 下钻：加载该方案的用例集
-            h2, sets, s2, _ = _load_sets_for_plan(clicked)
-            return (_refresh_plan_table(),
-                    f"### ✅ 已选中方案「{clicked}」",
-                    h2, sets, s2)
+                new_set_btn.click(create_set, [new_set_name], [set_radio, new_set_name, set_lib_status])
 
-        plan_table.select(on_plan_select, None,
-                          [plan_table, plan_status,
-                           set_header, set_table, set_status])
+                def delete_set(set_name):
+                    if not set_name:
+                        return refresh_set_radio(), "### ❌ 请先选择用例集"
+                    delete_test_set(set_name)
+                    return refresh_set_radio(), '<div style="color:#888;padding:20px">请选择用例集</div>'
 
-        def do_exec_plan(table_data):
-            """执行选中的方案"""
-            if table_data is None:
-                return "### ❌ 请先选择方案"
-            import pandas as pd
-            rows = table_data.values.tolist() if isinstance(table_data, pd.DataFrame) else list(table_data)
-            selected = None
-            for r in rows:
-                if r[0]:
-                    selected = r[1]
-                    break
-            if not selected:
-                return "### ❌ 请勾选一个方案后点执行"
-            # 加载执行
-            cases, err = merge_plan_to_exec_list(selected)
-            if err:
-                return f"### ❌ {err}"
-            plan = load_plan(selected)
-            loop_cnt = plan.get('loop_count', 1) if plan else 1
-            # 保存到全局执行上下文
-            global _exec_cases_cache_s
-            _exec_cases_cache_s = cases
-            _current_plan_s['name'] = selected
-            _current_plan_s['loop'] = loop_cnt
-            return (f"### 🚀 准备执行方案「{selected}」"
-                    f"\n- 共 {len(cases)} 条用例，循环 {loop_cnt} 轮"
-                    f"\n- 💡 请切换到串口控制确保已连接，然后点执行按钮")
+                del_set_btn.click(delete_set, [set_radio], [set_radio, set_case_html])
 
-        exec_plan_btn.click(do_exec_plan, [plan_table], plan_status)
-
-        def do_del_plans(table_data):
-            """删除勾选的方案"""
-            if table_data is None:
-                return _refresh_plan_table(), "### ❌ 无数据"
-            import pandas as pd
-            rows = table_data.values.tolist() if isinstance(table_data, pd.DataFrame) else list(table_data)
-            deleted = 0
-            for r in rows:
-                if r[0]:
-                    delete_plan(r[1])
-                    deleted += 1
-            return _refresh_plan_table(), f"### ✅ 已删除 {deleted} 个方案"
-
-        del_plan_btn2.click(do_del_plans, [plan_table],
-                           [plan_table, plan_status])
-
-        def do_create_plan(name):
-            """创建新方案"""
-            if not name or not name.strip():
-                return _refresh_plan_table(), "### ❌ 请输入方案名称"
-            name = name.strip()
-            save_plan(name, [], loop_count=1, global_delay=None)
-            rows = [[False, p] for p in list_plans()]
-            return gr.Dataframe(value=rows, headers=["☑", "方案名称"],
-                                datatype=["bool", "str"], column_count=2,
-                                interactive=True), f"### ✅ 已创建方案「{name}」"
-
-        create_plan_btn.click(do_create_plan, [new_plan_name_in],
-                             [plan_table, plan_status]).then(
-            lambda: "", None, [new_plan_name_in])
-
-        # ── 框②：用例集列表 ──
-
-        def on_set_select(evt: gr.SelectData):
-            """点击用例集行：下钻"""
-            global _selected_plan, _selected_set
-            if evt.index is None or not _selected_plan:
-                return set_header, set_table, set_status, case_header, case_table, case_status
-            row_idx, _ = evt.index if isinstance(evt.index, (list, tuple)) else (evt.index, 0)
-            plan = load_plan(_selected_plan)
-            if not plan:
-                return (set_header, set_table, "### ❌ 方案已不存在",
-                        case_header, case_table, case_status)
-            set_names = plan.get('test_set_names', [])
-            if row_idx >= len(set_names):
-                return (set_header, set_table, "### ❌ 无效行",
-                        case_header, case_table, case_status)
-            clicked = set_names[row_idx]
-
-            # 下钻
-            h3, cases, s3 = _load_cases_for_set(clicked)
-            s2 = f"### ✅ 已选中用例集「{clicked}」"
-            return (f"### 📁 ② 用例集列表  «当前方案: {_selected_plan}»",
-                    [[False, s] for s in set_names],
-                    s2, h3, cases, s3)
-
-        set_table.select(on_set_select, None,
-                         [set_header, set_table, set_status,
-                          case_header, case_table, case_status])
-
-        def do_del_sets(table_data):
-            """删除勾选的用例集（从方案中移除）"""
-            global _selected_plan
-            if not _selected_plan or table_data is None:
-                return set_table, "### ❌ 请先选择方案"
-            import pandas as pd
-            rows = table_data.values.tolist() if isinstance(table_data, pd.DataFrame) else list(table_data)
-            plan = load_plan(_selected_plan)
-            if not plan:
-                return set_table, "### ❌ 方案已不存在"
-            kept = []
-            deleted = 0
-            for r in rows:
-                name = r[1]
-                if r[0]:
-                    deleted += 1
-                else:
-                    kept.append(name)
-            plan['test_set_names'] = kept
-            save_plan(_selected_plan, kept,
-                      loop_count=plan.get('loop_count', 1),
-                      global_delay=plan.get('global_delay'))
-            return [[False, s] for s in kept], f"### ✅ 已从方案中移除 {deleted} 个用例集"
-
-        del_set_btn2.click(do_del_sets, [set_table],
-                          [set_table, set_status])
-
-        def do_create_set_and_add(name):
-            """创建新用例集并添加到当前方案"""
-            global _selected_plan
-            if not _selected_plan:
-                return set_table, set_status, "### ❌ 请先在方案列表中选择一个方案"
-            if not name or not name.strip():
-                return set_table, set_status, "### ❌ 请输入用例集名称"
-            name = name.strip()
-            # 创建空测试集
-            save_test_set(name, [])
-            # 添加到方案
-            plan = load_plan(_selected_plan)
-            if not plan:
-                return set_table, set_status, "### ❌ 方案已不存在"
-            set_names = plan.get('test_set_names', [])
-            if name in set_names:
-                return set_table, set_status, f"### ⏭️ 用例集「{name}」已在方案中"
-            set_names.append(name)
-            save_plan(_selected_plan, set_names,
-                      loop_count=plan.get('loop_count', 1),
-                      global_delay=plan.get('global_delay'))
-            # 刷新表格
-            new_rows = [[False, s] for s in set_names]
-            return (new_rows,
-                    f"### ✅ 已创建并添加用例集「{name}」",
-                    f"### 📁 ② 用例集列表  «当前方案: {_selected_plan}»")
-
-        create_set_btn.click(do_create_set_and_add, [new_set_name_in],
-                            [set_table, set_status, set_header]).then(
-            lambda: "", None, [new_set_name_in])
-
-        # ── 框③：用例列表 ──
-
-        def do_add_case_row(table_data):
-            """新增一行空用例（先保存当前表格内容，再加新行）"""
-            global _selected_set
-            if not _selected_set:
-                return case_table, "### ❌ 请先选择用例集"
-            if table_data is not None:
-                # 先保存当前表格中的编辑内容
-                import pandas as pd
-                rows = table_data.values.tolist() if isinstance(table_data, pd.DataFrame) else list(table_data)
-                cases = []
-                for r in rows:
-                    name_raw = str(r[1]).strip()
-                    if not name_raw:
-                        continue
-                    name = name_raw.replace("📦 ", "").replace("✏️ ", "")
-                    cmd = str(r[2]).strip()
-                    to = int(r[3]) if str(r[3]).strip() else 10
-                    dl = int(r[4]) if str(r[4]).strip() else None
-                    source = "library" if "📦" in name_raw else "custom"
-                    cases.append({
-                        "source": source, "at_cmd": cmd, "case_name": name,
-                        "module": cmd if source == "library" else '',
-                        "expected": "OK", "timeout": to, "delay": dl,
+                def add_case(set_name, case_name, cmd, timeout, delay):
+                    if not set_name:
+                        return render_cases_html(set_name), "### ❌ 请先选择用例集"
+                    if not case_name or not case_name.strip():
+                        return render_cases_html(set_name), "### ❌ 请输入用例名称"
+                    if not cmd or not cmd.strip():
+                        return render_cases_html(set_name), "### ❌ 请输入AT指令"
+                    ts = load_test_set(set_name)
+                    existing = ts.get('cases', []) if ts else []
+                    existing.append({
+                        "source": "custom", "at_cmd": cmd.strip(), "case_name": case_name.strip(),
+                        "module": cmd.strip(), "expected": "OK",
+                        "timeout": int(timeout) if timeout else 10,
+                        "delay": int(delay) if delay else None,
                     })
-                save_test_set(_selected_set, cases)
-            # 再加新行
-            ts = load_test_set(_selected_set)
-            all_cases = ts.get('cases', []) if ts else []
-            all_cases.append({
-                "source": "custom", "at_cmd": "", "case_name": "新建用例",
-                "expected": "OK", "timeout": 10, "delay": None,
-            })
-            save_test_set(_selected_set, all_cases)
-            # 返回完整表格
-            ts2 = load_test_set(_selected_set)
-            final_cases = ts2.get('cases', [])
-            new_rows = []
-            for c in final_cases:
-                src = "📦" if c.get('source') == 'library' else "✏️"
-                name = f"{src} {c.get('case_name', '')}"[:40]
-                cmd = c.get('at_cmd', '') or c.get('module', '')
-                to = str(c.get('timeout', 10))
-                dl = str(c.get('delay', '')) if c.get('delay') is not None else ''
-                new_rows.append([False, name, cmd[:45], to, dl])
-            return new_rows, f"### ✅ 已新增一行（共 {len(final_cases)} 条），编辑后点保存"
+                    save_test_set(set_name, existing)
+                    return render_cases_html(set_name), f"### ✅ 已添加「{case_name}」（共 {len(existing)} 条）"
 
-        add_case_btn.click(do_add_case_row, [case_table],
-                          [case_table, case_status])
+                add_case_btn.click(add_case, [set_radio, case_name_in, case_cmd_in, case_timeout_in, case_delay_in],
+                                   [set_case_html, set_case_status])
 
-        def do_save_cases(table_data):
-            """保存用例集修改到磁盘"""
-            global _selected_set
-            if not _selected_set or table_data is None:
-                return case_table, "### ❌ 无数据可保存"
-            import pandas as pd
-            rows = table_data.values.tolist() if isinstance(table_data, pd.DataFrame) else list(table_data)
-            # 解析表格行（跳过最后一行➕新建）
-            cases = []
-            for r in rows:
-                name_raw = str(r[1]).strip()
-                if not name_raw:
-                    continue
-                # 去除图标前缀
-                name = name_raw.replace("📦 ", "").replace("✏️ ", "")
-                cmd = str(r[2]).strip()
-                to = int(r[3]) if str(r[3]).strip() else 10
-                dl = int(r[4]) if str(r[4]).strip() else None
-                source = "library" if "📦" in name_raw else "custom"
-                cases.append({
-                    "source": source,
-                    "at_cmd": cmd,
-                    "case_name": name,
-                    "module": cmd if source == "library" else '',
-                    "expected": "OK",
-                    "timeout": to,
-                    "delay": dl,
-                })
-            save_test_set(_selected_set, cases)
-            h3, new_rows, s3 = _load_cases_for_set(_selected_set)
-            return new_rows, f"### ✅ 已保存 {len(cases)} 条用例"
+                def del_case(set_name, idx):
+                    if not set_name:
+                        return render_cases_html(set_name), "### ❌ 请先选择用例集"
+                    ts = load_test_set(set_name)
+                    cases = ts.get('cases', []) if ts else []
+                    i = int(idx) - 1 if idx else -1
+                    if i < 0 or i >= len(cases):
+                        return render_cases_html(set_name), f"### ❌ 序号 {idx} 无效（共 {len(cases)} 条）"
+                    removed = cases.pop(i)
+                    save_test_set(set_name, cases)
+                    return render_cases_html(set_name), f"### ✅ 已删除「{removed.get('case_name','')}」（剩余 {len(cases)} 条）"
 
-        save_case_btn.click(do_save_cases, [case_table],
-                           [case_table, case_status])
+                del_case_btn.click(del_case, [set_radio, del_case_idx], [set_case_html, set_case_status])
 
-        def do_del_cases(table_data):
-            """删除勾选的用例"""
-            global _selected_set
-            if not _selected_set or table_data is None:
-                return case_table, "### ❌ 无数据"
-            import pandas as pd
-            rows = table_data.values.tolist() if isinstance(table_data, pd.DataFrame) else list(table_data)
-            # 从磁盘重新加载确保准确
-            ts = load_test_set(_selected_set)
-            if not ts:
-                return case_table, "### ❌ 用例集已不存在"
-            all_cases = ts.get('cases', [])
-            keep = []
-            deleted = 0
-            for i, r in enumerate(rows):
-                if i >= len(all_cases):
-                    break
-                if r[0]:
-                    deleted += 1
-                else:
-                    keep.append(all_cases[i])
-            if deleted == 0:
-                return case_table, "### ⏭️ 没有勾选的项"
-            save_test_set(_selected_set, keep)
-            h3, new_rows, s3 = _load_cases_for_set(_selected_set)
-            return new_rows, f"### ✅ 已删除 {deleted} 条"
+                # 初始加载
+                _init_sets = sorted(s.rstrip('_') for s in list_test_sets())
+                set_radio.choices = [(s, s) for s in _init_sets]
 
-        del_case_btn.click(do_del_cases, [case_table],
-                          [case_table, case_status])
+            # ── 方案管理 ──────────────────
+            with gr.Tab("📋 方案管理"):
+                with gr.Row():
+                    with gr.Column(scale=1, min_width=220):
+                        gr.Markdown("### 方案列表")
+                        plan_radio = gr.Radio(label="选择方案", choices=[], interactive=True)
+                        with gr.Row():
+                            new_plan_name = gr.Textbox(label="新方案名称", placeholder="输入名称", scale=2)
+                            new_plan_btn = gr.Button("➕ 新建", scale=1)
+                        del_plan_btn = gr.Button("🗑️ 删除选中方案", scale=1)
+                        plan_status = gr.Markdown("")
+
+                        refresh_plan_btn = gr.Button("🔄 刷新", scale=1)
+                        gr.Markdown("---")
+                        gr.Markdown("### 可选用例集")
+                        set_checkboxes = gr.CheckboxGroup(label="勾选后点保存", choices=[], interactive=True)
+                        save_sets_btn = gr.Button("💾 保存勾选", variant="primary", scale=1)
+                        plan_set_status = gr.Markdown("")
+
+                    with gr.Column(scale=2, min_width=380):
+                        gr.Markdown("### 方案全部用例（只读）")
+                        plan_case_html = gr.HTML('<div style="color:#888;padding:20px;font-size:16px">请选择方案</div>')
+                        exec_plan_btn = gr.Button("🚀 执行方案", variant="primary")
+                        plan_exec_status = gr.Markdown("")
+
+                # ── 方案管理事件 ──
+                def _merge_plan_cases(plan_name):
+                    if not plan_name:
+                        return '<div style="color:#888;padding:20px;font-size:16px">请选择方案</div>'
+                    plan = load_plan(plan_name)
+                    if not plan:
+                        return f'<div style="color:red;padding:10px">方案「{plan_name}」不存在</div>'
+                    set_names = plan.get('test_set_names', [])
+                    if not set_names:
+                        return f'<div style="padding:16px;background:#fff3cd;border-radius:4px"><b>{plan_name}</b> 暂无关联用例集，请在左侧勾选用例集后保存</div>'
+                    rows_html = ""
+                    total = 0
+                    for sn in set_names:
+                        ts = load_test_set(sn)
+                        if not ts:
+                            continue
+                        for i, c in enumerate(ts.get('cases', [])):
+                            name = c.get('case_name', '')[:30]
+                            cmd = (c.get('at_cmd', '') or c.get('module', ''))[:45]
+                            to = c.get('timeout', 10)
+                            dl = c.get('delay', '') if c.get('delay') is not None else ''
+                            rows_html += f'''<tr>
+                                <td style="padding:6px 8px">{sn}</td>
+                                <td style="padding:6px 8px">{name}</td>
+                                <td style="padding:6px 8px;font-family:monospace;font-size:13px"><code>{cmd}</code></td>
+                                <td style="text-align:center;width:50px;padding:6px 4px">{to}s</td>
+                                <td style="text-align:center;width:55px;padding:6px 4px">{dl}ms</td>
+                            </tr>'''
+                            total += 1
+                    return f'''<div>
+                        <div style="margin-bottom:8px;font-weight:600;font-size:15px">
+                            📋 {plan_name} · {total} 条（{len(set_names)} 个用例集）
+                        </div>
+                        <table style="width:100%;border-collapse:collapse;font-size:14px">
+                            <thead>
+                                <tr style="border-bottom:2px solid var(--border-color-primary, #ccc)">
+                                    <th style="padding:6px;text-align:left">用例集</th>
+                                    <th style="padding:6px;text-align:left">用例名称</th>
+                                    <th style="padding:6px;text-align:left">AT指令</th>
+                                    <th style="padding:6px;width:50px">超时</th>
+                                    <th style="padding:6px;width:55px">延迟</th>
+                                </tr>
+                            </thead>
+                            <tbody>{rows_html}</tbody>
+                        </table>
+                    </div>'''
+
+                def refresh_plan_radio():
+                    plans = sorted(list_plans())
+                    return gr.Radio(choices=[(p, p) for p in plans])
+
+                def on_plan_select(plan_name):
+                    if not plan_name:
+                        return refresh_plan_radio(), "", gr.CheckboxGroup(choices=[]), [], ""
+                    plan = load_plan(plan_name)
+                    all_sets = sorted(s.rstrip('_') for s in list_test_sets())
+                    selected_sets = plan.get('test_set_names', [])
+                    case_md = _merge_plan_cases(plan_name)
+                    return (refresh_plan_radio(),
+                            f"### ✅ 方案「{plan_name}」",
+                            gr.CheckboxGroup(choices=[(s, s) for s in all_sets], value=selected_sets),
+                            case_md, case_md)
+
+                plan_radio.change(on_plan_select, [plan_radio],
+                                  [plan_radio, plan_status, set_checkboxes, plan_case_html, plan_exec_status])
+
+                refresh_plan_btn.click(on_plan_select, [plan_radio],
+                                       [plan_radio, plan_status, set_checkboxes, plan_case_html, plan_exec_status])
+
+                def create_plan(name):
+                    if not name or not name.strip():
+                        return refresh_plan_radio(), "", "### ❌ 请输入名称"
+                    name = name.strip()
+                    if name not in list_plans():
+                        save_plan(name, [], loop_count=1, global_delay=None)
+                        return refresh_plan_radio(), "", f"### ✅ 已创建「{name}」"
+                    return refresh_plan_radio(), "", f"### ⏭️ 「{name}」已存在"
+
+                new_plan_btn.click(create_plan, [new_plan_name], [plan_radio, new_plan_name, plan_status])
+
+                def do_delete_plan(plan_name):
+                    if not plan_name:
+                        return refresh_plan_radio(), gr.CheckboxGroup(choices=[]), "", "", "### ❌ 请选择方案"
+                    delete_plan(plan_name)
+                    return refresh_plan_radio(), gr.CheckboxGroup(choices=[]), "", "", f"### ✅ 已删除「{plan_name}」"
+
+                del_plan_btn.click(do_delete_plan, [plan_radio],
+                                   [plan_radio, set_checkboxes, plan_case_html, plan_status, plan_exec_status])
+
+                def on_set_check(plan_name, checked_sets):
+                    if not plan_name:
+                        return [], "", "### ❌ 请先选择方案"
+                    plan = load_plan(plan_name)
+                    checked = list(checked_sets) if checked_sets else []
+                    save_plan(plan_name, checked, loop_count=plan.get('loop_count', 1) if plan else 1,
+                              global_delay=plan.get('global_delay') if plan else None)
+                    case_md = _merge_plan_cases(plan_name)
+                    return case_md, case_md, f"### ✅ 已保存，{len(checked)} 个用例集"
+
+                save_sets_btn.click(on_set_check, [plan_radio, set_checkboxes],
+                                    [plan_case_html, plan_exec_status, plan_set_status])
+
+                def exec_plan(plan_name):
+                    """执行方案：逐条发送 AT 指令，实时显示进度"""
+                    if not plan_name:
+                        yield "### ❌ 请先选择方案"
+                        return
+                    if not serial.is_connected():
+                        yield "### ❌ 请先连接串口"
+                        return
+                    raw_cases, err = merge_plan_to_exec_list(plan_name)
+                    if err:
+                        yield f"### ❌ {err}"
+                        return
+                    if not raw_cases:
+                        yield "### ❌ 方案无用例"
+                        return
+
+                    # merge_plan_to_exec_list 返回 dict，转为 TestCase 对象
+                    from models.schemas import TestCase as TC
+                    cases = []
+                    for d in raw_cases:
+                        cases.append(TC(
+                            excel_file='', sheet_name=d.get('module', d.get('at_cmd', '')),
+                            row_id=0, test_group=d.get('set_name', ''),
+                            case_name=d.get('case_name', ''),
+                            params={'send_data': d.get('at_cmd', '')},
+                            expected_results=[d.get('expected', 'OK')],
+                            timeout=d.get('timeout', 10),
+                            delay_after=d.get('delay') or 0,
+                        ))
+
+                    yield f"### 🚀 执行「{plan_name}」共 {len(cases)} 条\n"
+                    executor = session.test_agent.executor
+                    executor.serial = serial
+                    from models.database import create_session as db_create_session, end_session, update_session_stats
+                    from datetime import datetime
+                    sname = f"{plan_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                    db_sid = db_create_session(name=sname, module='plan', port=serial.port,
+                        baudrate=serial.baudrate, model='', case_level='P0')
+                    passed, failed = 0, 0
+                    results = []
+                    for i, case in enumerate(cases, 1):
+                        yield f"🔄 [{i}/{len(cases)}] {case.case_name} ..."
+                        run = executor.execute_case(case, db_sid, port=serial.port, baudrate=serial.baudrate)
+                        results.append(run)
+                        if run.status == 'PASS':
+                            passed += 1
+                            yield f"  ✅ {case.case_name} ({run.duration_ms}ms)"
+                        elif run.status == 'FAIL':
+                            failed += 1
+                            yield f"  ❌ {case.case_name} ({run.duration_ms}ms)"
+                            if run.fail_reason:
+                                yield f"     原因: {run.fail_reason[:80]}"
+                        else:
+                            yield f"  ⚠️ {case.case_name}"
+                    update_session_stats(db_sid)
+                    summary = f"✅ {passed} | ❌ {failed} | 共 {len(cases)}"
+                    end_session(db_sid, summary=summary)
+                    _save_exec_result(results, summary, plan_name)
+                    yield f"\n### 📊 {summary}"
+                    if failed > 0:
+                        yield f"\n💡 切换到「🐛 缺陷管理」查看自动生成的缺陷"
+                        try:
+                            ok = 0
+                            for r in results:
+                                if r.status != 'FAIL':
+                                    continue
+                                at_cmd = r.at_command or ''
+                                actual = (r.actual or '').strip()[:200]
+                                desc = (
+                                    f"## 缺陷报告\n\n"
+                                    f"### 测试环境\n"
+                                    f"- **方案:** {plan_name}\n"
+                                    f"- **串口:** {serial.port} @ {serial.baudrate}\n"
+                                    f"- **测试指令:** `{at_cmd}`\n"
+                                    f"- **指令耗时:** {r.duration_ms}ms\n\n"
+                                    f"### 预期结果\n指令返回 `OK` 或匹配期望响应\n\n"
+                                    f"### 实际结果\n```\n{actual}\n```\n"
+                                    f"**失败原因:** {r.fail_reason or '未知'}\n"
+                                )
+                                res = session.defect_agent.create_local(r, description=desc)
+                                if res['ok']:
+                                    ok += 1
+                            if ok > 0:
+                                yield f"✅ 已自动生成 {ok} 条本地缺陷"
+                        except Exception as e:
+                            yield f"⚠️ 缺陷生成失败: {e}"
+
+                exec_plan_btn.click(exec_plan, [plan_radio], [plan_exec_status])
+
+                # 初始加载
+                _init_plans = sorted(list_plans())
+                plan_radio.choices = [(p, p) for p in _init_plans]
+                _init_all_sets = sorted(s.rstrip('_') for s in list_test_sets())
+                set_checkboxes.choices = [(s, s) for s in _init_all_sets]
 
     # ── 缺陷管理标签页（含多维筛选） ──
     with gr.Tab("🐛 缺陷管理") as defect_tab:
@@ -1440,12 +1363,6 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True) as ui:
         lingji_confirm_btn.click(submit_checked_to_lingji_fn,
                                  [lingji_project_dd, lingji_handler_dd, defect_table],
                                  lingji_progress)
-
-def _render_chat_display():
-    display = ""
-    for u, r in _chat_history[-20:]:
-        display += f"**你:** {u}\n\n**AI:** {r}\n\n---\n\n"
-    return display
 
 
 if __name__ == "__main__":
