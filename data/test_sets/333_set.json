@@ -1,0 +1,34 @@
+{
+  "name": "333",
+  "created": "2026-05-30T15:41:43",
+  "case_count": 3,
+  "cases": [
+    {
+      "source": "custom",
+      "at_cmd": "31",
+      "case_name": "新建用例31",
+      "module": "",
+      "expected": "OK",
+      "timeout": 10,
+      "delay": null
+    },
+    {
+      "source": "custom",
+      "at_cmd": "32",
+      "case_name": "新建用例32",
+      "module": "",
+      "expected": "OK",
+      "timeout": 10,
+      "delay": null
+    },
+    {
+      "source": "custom",
+      "at_cmd": "33",
+      "case_name": "新建用例33",
+      "module": "",
+      "expected": "OK",
+      "timeout": 10,
+      "delay": null
+    }
+  ]
+}

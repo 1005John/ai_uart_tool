@@ -1,0 +1,25 @@
+{
+  "name": "222",
+  "created": "2026-05-30T15:40:06",
+  "case_count": 2,
+  "cases": [
+    {
+      "source": "custom",
+      "at_cmd": "21",
+      "case_name": "新建用例21",
+      "module": "",
+      "expected": "OK",
+      "timeout": 10,
+      "delay": null
+    },
+    {
+      "source": "custom",
+      "at_cmd": "22",
+      "case_name": "新建用例22",
+      "module": "",
+      "expected": "OK",
+      "timeout": 10,
+      "delay": null
+    }
+  ]
+}

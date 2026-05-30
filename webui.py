@@ -1450,6 +1450,9 @@ def _render_chat_display():
 
 if __name__ == "__main__":
     import socket
-    host = socket.gethostbyname(socket.gethostname())
+    try:
+        host = socket.gethostbyname(socket.gethostname())
+    except socket.gaierror:
+        host = "127.0.0.1"
     print(f"\n🌐 http://localhost:7860  (本机: http://{host}:7860)\n")
     ui.launch(server_name="0.0.0.0", server_port=7860)
