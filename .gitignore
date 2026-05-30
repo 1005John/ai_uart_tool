@@ -20,3 +20,8 @@ Thumbs.db
 # Project specific
 data/ai_uart.db
 *.log
+
+# ===== 密钥安全 =====
+# 项目内 config.json 仅作为运行时生成文件，不提交真实密钥
+# 真实密钥存放在 ~/.ai_uart_keys.json（内置硬盘，永不离开本机）
+config/config.json

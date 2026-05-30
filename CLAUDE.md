@@ -27,3 +27,8 @@ python webui.py
 ## 外置硬盘提醒
 
 此项目在 DevDrive 外置硬盘上。离开前务必 `git push`。
+
+## 密钥管理
+
+API Key 不存储在项目内。真实密钥在 `~/.ai_uart_keys.json`（Mac mini 内置硬盘）。
+首次 clone 后，手动将密钥文件复制到 `~/.ai_uart_keys.json` 即可运行。
