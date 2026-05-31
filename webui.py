@@ -842,26 +842,29 @@ with gr.Blocks(title="AI Native UART Tool") as ui:
                             rename_set_name = gr.Textbox(label="重命名", placeholder="新名称", scale=2)
                             rename_set_btn = gr.Button("✏️", scale=1)
                         del_set_btn = gr.Button("🗑️ 删除选中", scale=1)
+                        with gr.Row():
+                            copy_set_name = gr.Textbox(label="复制为", placeholder="新用例集名称", scale=2)
+                            copy_set_btn = gr.Button("📋 复制", scale=1)
                         set_lib_status = gr.Markdown("")
 
                     with gr.Column(scale=2, min_width=350):
                         gr.Markdown("### 用例列表")
-                        set_case_html = gr.HTML('<div style="color:#888;padding:20px">请选择用例集</div>')
-                        gr.Markdown("---")
                         with gr.Row():
-                            case_name_in = gr.Textbox(label="名称", placeholder="用例名称", scale=2)
-                            case_cmd_in = gr.Textbox(label="AT指令", placeholder="AT+CMD", scale=2)
-                            case_timeout_in = gr.Number(label="超时", value=10, precision=0, scale=1)
-                            case_delay_in = gr.Number(label="延迟", value=0, precision=0, scale=1)
-                            add_case_btn = gr.Button("➕ 添加", variant="primary", scale=1)
-                            del_case_idx = gr.Number(label="删#", value=1, precision=0, scale=1)
-                            del_case_btn = gr.Button("🗑️", scale=1)
-                            move_idx = gr.Number(label="移#", value=1, precision=0, scale=1)
-                            move_up_btn = gr.Button("⬆", scale=1)
-                            move_down_btn = gr.Button("⬇", scale=1)
+                            save_set_btn = gr.Button("💾 保存", variant="primary", scale=1)
+                            del_set_case_btn = gr.Button("🗑️ 删除勾选", scale=1)
+                            case_up_btn = gr.Button("⬆", scale=1)
+                            case_down_btn = gr.Button("⬇", scale=1)
+                        set_case_table = gr.Dataframe(
+                            headers=["☑", "用例名称", "AT指令", "超时(s)", "延迟(ms)"],
+                            datatype=["bool", "str", "str", "str", "str"],
+                            column_count=5, interactive=True, row_count=20,
+                            label="编辑单元格后点保存",
+                        )
                         set_case_status = gr.Markdown("")
 
                 # ── 用例集库事件 ──
+                PAD_ROWS = 20
+
                 def _clean_set_names():
                     return sorted([s.rstrip('_') for s in list_test_sets()])
 
@@ -869,51 +872,23 @@ with gr.Blocks(title="AI Native UART Tool") as ui:
                     sets = _clean_set_names()
                     return gr.Radio(choices=[(s, s) for s in sets])
 
-                def render_cases_html(set_name):
-                    """渲染用例集为 HTML 表格（无背景色，继承主题）"""
+                def load_cases_to_table(set_name):
                     if not set_name:
-                        return '<div style="opacity:0.5;padding:20px;font-size:16px">请选择用例集</div>'
+                        return [], "### 请选择用例集"
                     ts = load_test_set(set_name)
                     cases = ts.get('cases', []) if ts else []
-                    if not cases:
-                        return f'<div style="padding:12px;border:1px solid var(--border-color-primary, #ddd);border-radius:6px"><b>{set_name}</b> 暂无用例，请添加</div>'
+                    rows = []
+                    for c in cases:
+                        rows.append([False,
+                                     c.get('case_name', '')[:40],
+                                     (c.get('at_cmd', '') or c.get('module', ''))[:45],
+                                     str(c.get('timeout', 10)),
+                                     str(c.get('delay', '') if c.get('delay') is not None else '')])
+                    while len(rows) < PAD_ROWS:
+                        rows.append([False, "", "", "", ""])
+                    return rows, f"### 用例集「{set_name}」共 {len(cases)} 条"
 
-                    rows_html = ""
-                    for i, c in enumerate(cases, 1):
-                        name = c.get('case_name', '')[:30]
-                        cmd = (c.get('at_cmd', '') or c.get('module', ''))[:45]
-                        to = c.get('timeout', 10)
-                        dl = c.get('delay', '') if c.get('delay') is not None else ''
-                        rows_html += f'''<tr>
-                            <td style="text-align:center;opacity:0.5;width:30px;padding:6px 4px">{i}</td>
-                            <td style="padding:6px 8px">{name}</td>
-                            <td style="padding:6px 8px;font-family:monospace;font-size:13px"><code>{cmd}</code></td>
-                            <td style="text-align:center;width:50px;padding:6px 4px">{to}s</td>
-                            <td style="text-align:center;width:55px;padding:6px 4px">{dl}ms</td>
-                        </tr>'''
-
-                    return f'''<div>
-                        <div style="margin-bottom:8px;font-weight:600;font-size:15px">
-                            📋 {set_name} · {len(cases)} 条
-                        </div>
-                        <table style="width:100%;border-collapse:collapse;font-size:14px">
-                            <thead>
-                                <tr style="border-bottom:2px solid var(--border-color-primary, #ccc)">
-                                    <th style="padding:6px;width:30px">#</th>
-                                    <th style="padding:6px;text-align:left">用例名称</th>
-                                    <th style="padding:6px;text-align:left">AT指令</th>
-                                    <th style="padding:6px;width:50px">超时</th>
-                                    <th style="padding:6px;width:55px">延迟</th>
-                                </tr>
-                            </thead>
-                            <tbody>{rows_html}</tbody>
-                        </table>
-                    </div>'''
-
-                def on_set_select(set_name):
-                    return render_cases_html(set_name), ""
-
-                set_radio.change(on_set_select, [set_radio], [set_case_html, set_case_status])
+                set_radio.change(load_cases_to_table, [set_radio], [set_case_table, set_case_status])
 
                 def create_set(name):
                     if not name or not name.strip():
@@ -928,11 +903,11 @@ with gr.Blocks(title="AI Native UART Tool") as ui:
 
                 def delete_set(set_name):
                     if not set_name:
-                        return refresh_set_radio(), "### ❌ 请先选择用例集"
+                        return refresh_set_radio(), [], "### ❌ 请先选择用例集"
                     delete_test_set(set_name)
-                    return refresh_set_radio(), '<div style="color:#888;padding:20px">请选择用例集</div>'
+                    return refresh_set_radio(), [], f"### ✅ 已删除「{set_name}」"
 
-                del_set_btn.click(delete_set, [set_radio], [set_radio, set_case_html])
+                del_set_btn.click(delete_set, [set_radio], [set_radio, set_case_table, set_lib_status])
 
                 def rename_set(old_name, new_name):
                     if not old_name:
@@ -948,79 +923,119 @@ with gr.Blocks(title="AI Native UART Tool") as ui:
                     if ts:
                         save_test_set(new_name, ts.get('cases', []))
                         delete_test_set(old_name)
-                    # 更新引用该用例集的方案
                     for pname in list_plans():
                         plan = load_plan(pname)
-                        if plan:
-                            sn = plan.get('test_set_names', [])
-                            if old_name in sn:
-                                sn[sn.index(old_name)] = new_name
-                                save_plan(pname, sn, loop_count=plan.get('loop_count', 1),
-                                          global_delay=plan.get('global_delay'))
+                        if plan and old_name in (plan.get('test_set_names') or []):
+                            sn = plan['test_set_names']
+                            sn[sn.index(old_name)] = new_name
+                            save_plan(pname, sn, loop_count=plan.get('loop_count', 1),
+                                      global_delay=plan.get('global_delay'))
                     return refresh_set_radio(), "", f"### ✅ 已重命名「{old_name}」→「{new_name}」"
 
                 rename_set_btn.click(rename_set, [set_radio, rename_set_name],
                                      [set_radio, rename_set_name, set_lib_status])
 
-                def move_case(set_name, idx, direction):
+                def copy_set(old_name, new_name):
+                    if not old_name:
+                        return refresh_set_radio(), "", "### ❌ 请先选择用例集"
+                    if not new_name or not new_name.strip():
+                        return refresh_set_radio(), "", "### ❌ 请输入新名称"
+                    new_name = new_name.strip()
+                    if new_name in _clean_set_names():
+                        return refresh_set_radio(), "", f"### ⏭️ 「{new_name}」已存在"
+                    ts = load_test_set(old_name)
+                    save_test_set(new_name, ts.get('cases', []) if ts else [])
+                    return refresh_set_radio(), "", f"### ✅ 已复制「{old_name}」→「{new_name}」"
+
+                copy_set_btn.click(copy_set, [set_radio, copy_set_name],
+                                   [set_radio, copy_set_name, set_lib_status])
+
+                def save_cases_from_table(set_name, table_data):
                     if not set_name:
-                        return render_cases_html(set_name), "### ❌ 请先选择用例集"
-                    ts = load_test_set(set_name)
-                    cases = ts.get('cases', []) if ts else []
-                    i = int(idx) - 1 if idx else -1
-                    if i < 0 or i >= len(cases):
-                        return render_cases_html(set_name), f"### ❌ 序号 {idx} 无效"
-                    if direction == 'up' and i > 0:
-                        cases[i], cases[i-1] = cases[i-1], cases[i]
-                        new_i = i
-                    elif direction == 'down' and i < len(cases) - 1:
-                        cases[i], cases[i+1] = cases[i+1], cases[i]
-                        new_i = i + 2
+                        return table_data, "### ❌ 请先选择用例集"
+                    import pandas as pd
+                    if isinstance(table_data, pd.DataFrame):
+                        rows = table_data.values.tolist()
+                    elif table_data and hasattr(table_data, '__iter__'):
+                        rows = [list(r) for r in table_data]
                     else:
-                        return render_cases_html(set_name), "### ⏭️ 无法移动"
+                        rows = []
+                    cases = []
+                    for r in rows:
+                        name = str(r[1]).strip() if len(r) > 1 else ""
+                        cmd = str(r[2]).strip() if len(r) > 2 else ""
+                        if not name or not cmd:
+                            continue
+                        to = int(r[3]) if len(r) > 3 and str(r[3]).strip() else 10
+                        dl = int(r[4]) if len(r) > 4 and str(r[4]).strip() else None
+                        cases.append({
+                            "source": "custom", "at_cmd": cmd, "case_name": name[:40],
+                            "module": cmd, "expected": "OK", "timeout": to,
+                            "delay": dl if dl else None,
+                        })
                     save_test_set(set_name, cases)
-                    return render_cases_html(set_name), f"### ✅ 已移动到第 {new_i} 位"
+                    new_rows, msg = load_cases_to_table(set_name)
+                    return new_rows, f"### ✅ 已保存 {len(cases)} 条"
 
-                move_up_btn.click(lambda s, i: move_case(s, i, 'up'), [set_radio, move_idx],
-                                  [set_case_html, set_case_status])
-                move_down_btn.click(lambda s, i: move_case(s, i, 'down'), [set_radio, move_idx],
-                                    [set_case_html, set_case_status])
+                save_set_btn.click(save_cases_from_table, [set_radio, set_case_table],
+                                   [set_case_table, set_case_status])
 
-                def add_case(set_name, case_name, cmd, timeout, delay):
+                def del_selected_cases(set_name, table_data):
                     if not set_name:
-                        return render_cases_html(set_name), "### ❌ 请先选择用例集"
-                    if not case_name or not case_name.strip():
-                        return render_cases_html(set_name), "### ❌ 请输入用例名称"
-                    if not cmd or not cmd.strip():
-                        return render_cases_html(set_name), "### ❌ 请输入AT指令"
+                        return table_data, "### ❌ 请先选择用例集"
+                    import pandas as pd
+                    if isinstance(table_data, pd.DataFrame):
+                        rows = table_data.values.tolist()
+                    else:
+                        rows = [list(r) for r in table_data] if table_data else []
                     ts = load_test_set(set_name)
-                    existing = ts.get('cases', []) if ts else []
-                    existing.append({
-                        "source": "custom", "at_cmd": cmd.strip(), "case_name": case_name.strip(),
-                        "module": cmd.strip(), "expected": "OK",
-                        "timeout": int(timeout) if timeout else 10,
-                        "delay": int(delay) if delay else None,
-                    })
-                    save_test_set(set_name, existing)
-                    return render_cases_html(set_name), f"### ✅ 已添加「{case_name}」（共 {len(existing)} 条）"
+                    all_cases = ts.get('cases', []) if ts else []
+                    keep = [all_cases[i] for i in range(len(all_cases))
+                            if i >= len(rows) or not rows[i][0]]
+                    deleted = len(all_cases) - len(keep)
+                    if deleted == 0:
+                        return table_data, "### ⏭️ 未勾选任何用例"
+                    save_test_set(set_name, keep)
+                    new_rows, msg = load_cases_to_table(set_name)
+                    return new_rows, f"### ✅ 已删除 {deleted} 条"
 
-                add_case_btn.click(add_case, [set_radio, case_name_in, case_cmd_in, case_timeout_in, case_delay_in],
-                                   [set_case_html, set_case_status])
+                del_set_case_btn.click(del_selected_cases, [set_radio, set_case_table],
+                                       [set_case_table, set_case_status])
 
-                def del_case(set_name, idx):
+                def move_selected_case(set_name, table_data, direction):
                     if not set_name:
-                        return render_cases_html(set_name), "### ❌ 请先选择用例集"
+                        return table_data, "### ❌ 请先选择用例集"
+                    import pandas as pd
+                    if isinstance(table_data, pd.DataFrame):
+                        rows = table_data.values.tolist()
+                    else:
+                        rows = [list(r) for r in table_data] if table_data else []
                     ts = load_test_set(set_name)
                     cases = ts.get('cases', []) if ts else []
-                    i = int(idx) - 1 if idx else -1
-                    if i < 0 or i >= len(cases):
-                        return render_cases_html(set_name), f"### ❌ 序号 {idx} 无效（共 {len(cases)} 条）"
-                    removed = cases.pop(i)
+                    sel = None
+                    for i, r in enumerate(rows):
+                        if i < len(cases) and r[0]:
+                            sel = i; break
+                    if sel is None:
+                        return table_data, "### ❌ 请先勾选一行"
+                    if direction == 'up' and sel > 0:
+                        cases[sel], cases[sel-1] = cases[sel-1], cases[sel]
+                    elif direction == 'down' and sel < len(cases) - 1:
+                        cases[sel], cases[sel+1] = cases[sel+1], cases[sel]
+                    else:
+                        return table_data, "### ⏭️ 无法移动"
                     save_test_set(set_name, cases)
-                    return render_cases_html(set_name), f"### ✅ 已删除「{removed.get('case_name','')}」（剩余 {len(cases)} 条）"
+                    new_rows, msg = load_cases_to_table(set_name)
+                    return new_rows, f"### ✅ 已移动"
 
-                del_case_btn.click(del_case, [set_radio, del_case_idx], [set_case_html, set_case_status])
+                case_up_btn.click(lambda s, t: move_selected_case(s, t, 'up'),
+                                  [set_radio, set_case_table], [set_case_table, set_case_status])
+                case_down_btn.click(lambda s, t: move_selected_case(s, t, 'down'),
+                                    [set_radio, set_case_table], [set_case_table, set_case_status])
 
+                # 初始加载
+                _init_sets = sorted(s.rstrip('_') for s in list_test_sets())
+                set_radio.choices = [(s, s) for s in _init_sets]
                 # 初始加载
                 _init_sets = sorted(s.rstrip('_') for s in list_test_sets())
                 set_radio.choices = [(s, s) for s in _init_sets]
@@ -1453,4 +1468,7 @@ if __name__ == "__main__":
     except socket.gaierror:
         host = "127.0.0.1"
     print(f"\n🌐 http://localhost:7860  (本机: http://{host}:7860)\n")
-    ui.launch(server_name="0.0.0.0", server_port=7860)
+    ui.launch(server_name="0.0.0.0", server_port=7860, head="""<style>
+html, body { overflow: hidden; height: 100vh; }
+.gradio-container { max-height: 100vh; overflow-y: auto; }
+</style>""")
