@@ -851,15 +851,16 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                         gr.Markdown("### 用例列表")
                         with gr.Row():
                             save_set_btn = gr.Button("💾 保存", variant="primary", scale=1)
-                            del_set_case_btn = gr.Button("🗑️ 删除勾选", scale=1)
-                            case_up_btn = gr.Button("⬆", scale=1)
-                            case_down_btn = gr.Button("⬇", scale=1)
+                            del_set_case_btn = gr.Button("🗑️ 删除此行", scale=1)
+                            case_up_btn = gr.Button("⬆ 上移此行", scale=1)
+                            case_down_btn = gr.Button("⬇ 下移此行", scale=1)
                         set_case_table = gr.Dataframe(
-                            headers=["☑", "用例名称", "AT指令", "超时(s)", "延迟(ms)"],
-                            datatype=["bool", "str", "str", "str", "str"],
+                            headers=["", "用例名称", "AT指令", "超时(s)", "延迟(ms)"],
+                            datatype=["str", "str", "str", "str", "str"],
                             column_count=5, interactive=True, row_count=20,
-                            label="编辑单元格后点保存",
+                            label="点击行选中→按钮操作",
                         )
+                        selected_row = gr.State(value=None)
                         set_case_status = gr.Markdown("")
 
                 # ── 用例集库事件 ──
@@ -871,24 +872,33 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                 def refresh_set_radio():
                     sets = _clean_set_names()
                     return gr.Radio(choices=[(s, s) for s in sets])
-
                 def load_cases_to_table(set_name):
                     if not set_name:
-                        return [], "### 请选择用例集"
+                        return [], "### 请选择用例集", None
                     ts = load_test_set(set_name)
                     cases = ts.get('cases', []) if ts else []
                     rows = []
-                    for c in cases:
-                        rows.append([False,
+                    for i, c in enumerate(cases):
+                        marker = "●" if i == 0 else "○"
+                        rows.append([f"{marker} #{i+1}",
                                      c.get('case_name', '')[:40],
                                      (c.get('at_cmd', '') or c.get('module', ''))[:45],
                                      str(c.get('timeout', 10)),
                                      str(c.get('delay', '') if c.get('delay') is not None else '')])
                     while len(rows) < PAD_ROWS:
-                        rows.append([False, "", "", "", ""])
-                    return rows, f"### 用例集「{set_name}」共 {len(cases)} 条"
+                        rows.append(["", "", "", "", ""])
+                    return rows, f"### 用例集「{set_name}」共 {len(cases)} 条 · 点击行选中", None
 
-                set_radio.change(load_cases_to_table, [set_radio], [set_case_table, set_case_status])
+                set_radio.change(load_cases_to_table, [set_radio], [set_case_table, set_case_status, selected_row])
+
+                def on_row_select(evt: gr.SelectData):
+                    if evt.index is None:
+                        return None
+                    if isinstance(evt.index, (list, tuple)):
+                        return evt.index[0]
+                    return evt.index
+
+                set_case_table.select(on_row_select, None, [selected_row])
 
                 def create_set(name):
                     if not name or not name.strip():
@@ -903,11 +913,11 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
 
                 def delete_set(set_name):
                     if not set_name:
-                        return refresh_set_radio(), [], "### ❌ 请先选择用例集"
+                        return refresh_set_radio(), [], "### ❌ 请先选择用例集", None
                     delete_test_set(set_name)
-                    return refresh_set_radio(), [], f"### ✅ 已删除「{set_name}」"
+                    return refresh_set_radio(), [], f"### ✅ 已删除「{set_name}」", None
 
-                del_set_btn.click(delete_set, [set_radio], [set_radio, set_case_table, set_lib_status])
+                del_set_btn.click(delete_set, [set_radio], [set_radio, set_case_table, set_lib_status, selected_row])
 
                 def rename_set(old_name, new_name):
                     if not old_name:
@@ -952,7 +962,7 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
 
                 def save_cases_from_table(set_name, table_data):
                     if not set_name:
-                        return table_data, "### ❌ 请先选择用例集"
+                        return table_data, "### ❌ 请先选择用例集", None
                     import pandas as pd
                     if isinstance(table_data, pd.DataFrame):
                         rows = table_data.values.tolist()
@@ -962,10 +972,12 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                         rows = []
                     cases = []
                     for r in rows:
+                        # 跳过空行和标记列
                         name = str(r[1]).strip() if len(r) > 1 else ""
                         cmd = str(r[2]).strip() if len(r) > 2 else ""
                         if not name or not cmd:
                             continue
+                        # 去掉名称中可能的标记前缀
                         to = int(r[3]) if len(r) > 3 and str(r[3]).strip() else 10
                         dl = int(r[4]) if len(r) > 4 and str(r[4]).strip() else None
                         cases.append({
@@ -974,64 +986,50 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                             "delay": dl if dl else None,
                         })
                     save_test_set(set_name, cases)
-                    new_rows, msg = load_cases_to_table(set_name)
-                    return new_rows, f"### ✅ 已保存 {len(cases)} 条"
+                    new_rows, msg, _ = load_cases_to_table(set_name)
+                    return new_rows, f"### ✅ 已保存 {len(cases)} 条", None
 
                 save_set_btn.click(save_cases_from_table, [set_radio, set_case_table],
-                                   [set_case_table, set_case_status])
+                                   [set_case_table, set_case_status, selected_row])
 
-                def del_selected_cases(set_name, table_data):
+                def del_selected_case(set_name, sel_row):
                     if not set_name:
-                        return table_data, "### ❌ 请先选择用例集"
-                    import pandas as pd
-                    if isinstance(table_data, pd.DataFrame):
-                        rows = table_data.values.tolist()
-                    else:
-                        rows = [list(r) for r in table_data] if table_data else []
-                    ts = load_test_set(set_name)
-                    all_cases = ts.get('cases', []) if ts else []
-                    keep = [all_cases[i] for i in range(len(all_cases))
-                            if i >= len(rows) or not rows[i][0]]
-                    deleted = len(all_cases) - len(keep)
-                    if deleted == 0:
-                        return table_data, "### ⏭️ 未勾选任何用例"
-                    save_test_set(set_name, keep)
-                    new_rows, msg = load_cases_to_table(set_name)
-                    return new_rows, f"### ✅ 已删除 {deleted} 条"
-
-                del_set_case_btn.click(del_selected_cases, [set_radio, set_case_table],
-                                       [set_case_table, set_case_status])
-
-                def move_selected_case(set_name, table_data, direction):
-                    if not set_name:
-                        return table_data, "### ❌ 请先选择用例集"
-                    import pandas as pd
-                    if isinstance(table_data, pd.DataFrame):
-                        rows = table_data.values.tolist()
-                    else:
-                        rows = [list(r) for r in table_data] if table_data else []
+                        return [], "", None
+                    if sel_row is None:
+                        return load_cases_to_table(set_name)
                     ts = load_test_set(set_name)
                     cases = ts.get('cases', []) if ts else []
-                    sel = None
-                    for i, r in enumerate(rows):
-                        if i < len(cases) and r[0]:
-                            sel = i; break
-                    if sel is None:
-                        return table_data, "### ❌ 请先勾选一行"
-                    if direction == 'up' and sel > 0:
-                        cases[sel], cases[sel-1] = cases[sel-1], cases[sel]
-                    elif direction == 'down' and sel < len(cases) - 1:
-                        cases[sel], cases[sel+1] = cases[sel+1], cases[sel]
-                    else:
-                        return table_data, "### ⏭️ 无法移动"
+                    if sel_row >= len(cases):
+                        return load_cases_to_table(set_name)
+                    removed = cases.pop(sel_row)
                     save_test_set(set_name, cases)
-                    new_rows, msg = load_cases_to_table(set_name)
-                    return new_rows, f"### ✅ 已移动"
+                    new_rows, msg, _ = load_cases_to_table(set_name)
+                    return new_rows, f"### ✅ 已删除「{removed.get('case_name','')}」", None
 
-                case_up_btn.click(lambda s, t: move_selected_case(s, t, 'up'),
-                                  [set_radio, set_case_table], [set_case_table, set_case_status])
-                case_down_btn.click(lambda s, t: move_selected_case(s, t, 'down'),
-                                    [set_radio, set_case_table], [set_case_table, set_case_status])
+                del_set_case_btn.click(del_selected_case, [set_radio, selected_row],
+                                       [set_case_table, set_case_status, selected_row])
+
+                def move_selected_case(set_name, sel_row, direction):
+                    if not set_name or sel_row is None:
+                        return [], "", None
+                    ts = load_test_set(set_name)
+                    cases = ts.get('cases', []) if ts else []
+                    if sel_row >= len(cases):
+                        return load_cases_to_table(set_name)
+                    if direction == 'up' and sel_row > 0:
+                        cases[sel_row], cases[sel_row-1] = cases[sel_row-1], cases[sel_row]
+                    elif direction == 'down' and sel_row < len(cases) - 1:
+                        cases[sel_row], cases[sel_row+1] = cases[sel_row+1], cases[sel_row]
+                    else:
+                        return load_cases_to_table(set_name)
+                    save_test_set(set_name, cases)
+                    new_rows, msg, _ = load_cases_to_table(set_name)
+                    return new_rows, f"### ✅ 已移动", sel_row + (1 if direction == 'down' else -1 if direction == 'up' else 0)
+
+                case_up_btn.click(lambda s, r: move_selected_case(s, r, 'up'),
+                                  [set_radio, selected_row], [set_case_table, set_case_status, selected_row])
+                case_down_btn.click(lambda s, r: move_selected_case(s, r, 'down'),
+                                    [set_radio, selected_row], [set_case_table, set_case_status, selected_row])
 
                 # 初始加载
                 _init_sets = sorted(s.rstrip('_') for s in list_test_sets())
