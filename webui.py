@@ -1296,36 +1296,35 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
             refresh_defect_btn = gr.Button("🔄 刷新列表", variant="secondary", scale=1)
             clear_filters_btn = gr.Button("🗑️ 清空筛选", scale=1)
 
-        # ── 缺陷表格（全宽） ──
-        defect_table = gr.Dataframe(
-            value=_build_defect_table(),
-            headers=["☑", "ID", "标题", "型号", "版本号", "测试时间", "状态"],
-            datatype=["bool", "str", "str", "str", "str", "str", "str"],
-            column_count=7, interactive=True,
-            row_count=50,
-            label="缺陷列表（勾选后点批量删除/提交灵畿，点击行查看详情）",
-        )
+        # ── 缺陷列表 + 详情（左右布局）──
         with gr.Row():
-            batch_delete_btn = gr.Button("🗑️ 批量删除选中", variant="primary", scale=1)
-            defect_id_input = gr.Number(value=0, label="按ID查看", scale=1, precision=0)
-            view_defect_btn = gr.Button("👁️ 查看", scale=1)
-            gen_defect_btn = gr.Button("📋 生成本地缺陷", scale=1)
-        defect_status = gr.Markdown(
-            f"### 💡 共 {len(_DEFECT_CACHE)} 条缺陷 | 勾选操作 | 点击行查看详情")
+            with gr.Column(scale=1, min_width=350):
+                defect_table = gr.Dataframe(
+                    value=_build_defect_table(),
+                    headers=["☑", "ID", "标题", "型号", "版本号", "测试时间", "状态"],
+                    datatype=["bool", "str", "str", "str", "str", "str", "str"],
+                    column_count=7, interactive=True, row_count=20,
+                    label="勾选操作 | 点击行查看详情",
+                )
+                with gr.Row():
+                    batch_delete_btn = gr.Button("🗑️ 批量删除", scale=1)
+                    defect_id_input = gr.Number(value=0, label="ID", scale=1, precision=0)
+                    view_defect_btn = gr.Button("👁️ 查看", scale=1)
+                    gen_defect_btn = gr.Button("📋 生成缺陷", scale=1)
+                defect_status = gr.Markdown(f"### 💡 共 {len(_DEFECT_CACHE)} 条")
 
-        # ── 缺陷详情（在表格下方） ──
-        defect_detail = gr.Markdown("### 点击缺陷行查看详情")
+                # ── 提交到灵畿 ──
+                gr.Markdown("### ⬆️ 提交灵畿")
+                with gr.Row():
+                    lingji_project_dd = gr.Dropdown(label="📁 项目", choices=[], interactive=True, scale=2)
+                    lingji_handler_dd = gr.Dropdown(label="👤 责任人", choices=[], interactive=True, scale=2)
+                with gr.Row():
+                    fetch_projects_btn = gr.Button("🔄 获取项目", scale=1)
+                    lingji_confirm_btn = gr.Button("⬆️ 提交勾选", variant="primary", scale=1)
+                lingji_progress = gr.Markdown("")
 
-        # ── 提交到灵畿 ──
-        gr.Markdown("### ⬆️ 提交到灵畿平台（先勾选缺陷，再点下方操作）")
-        with gr.Row():
-            lingji_project_dd = gr.Dropdown(
-                label="📁 目标项目", choices=[], interactive=True, scale=2)
-            lingji_handler_dd = gr.Dropdown(
-                label="👤 缺陷责任人", choices=[], interactive=True, scale=2)
-            fetch_projects_btn = gr.Button("🔄 获取项目+责任人列表", scale=1)
-            lingji_confirm_btn = gr.Button("⬆️ 提交勾选的缺陷到灵畿", variant="primary", scale=1)
-        lingji_progress = gr.Markdown("### 点击「获取项目+责任人列表」→ 选项目选人 → 点提交")
+            with gr.Column(scale=1, min_width=300):
+                defect_detail = gr.Markdown("### 点击缺陷行查看详情")
 
         # ── 筛选函数 ──
         def filter_defect_table(models, versions, titles, sy, sm, sd, ey, em, ed):
