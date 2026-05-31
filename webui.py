@@ -1259,13 +1259,12 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
 
     # ── 缺陷管理标签页 ──
     with gr.Tab("🐛 缺陷管理") as defect_tab:
-        # 筛选行
+        # 筛选行（Textbox 替代 DateTime，回车触发）
         with gr.Row():
-            date_start = gr.DateTime(label="起始日期", include_time=False, value=None, scale=1)
-            date_end = gr.DateTime(label="截止日期", include_time=False, value=None, scale=1)
+            date_start = gr.Textbox(label="起始日期", placeholder="2026-05-30", value="", scale=1)
+            date_end = gr.Textbox(label="截止日期", placeholder="2026-06-01", value="", scale=1)
             model_filter = gr.Dropdown(label="🔧 型号", choices=[], multiselect=True, scale=1)
             ver_filter = gr.Dropdown(label="📀 版本", choices=[], multiselect=True, scale=1)
-            refresh_btn = gr.Button("🔍 筛选", scale=1)
             clear_filters_btn = gr.Button("🗑️ 清空", scale=1)
 
 
@@ -1294,17 +1293,10 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                 defect_detail = gr.Markdown("### 点击缺陷行查看详情")
 
         # ── 辅助函数 ──
-        def _parse_date(dt_val):
-            """DateTime 组件返回 ISO 格式字符串如 '2026-05-31 00:00:00' 或 datetime"""
-            if not dt_val: return None
-            s = str(dt_val).strip()
-            # 可能格式: '2026-05-31 00:00:00' 或 '2026-05-31T00:00:00'
-            return s[:10] if len(s) >= 10 else s
-
         def filter_defect_table(models, versions, titles, ds, de):
-            """多维筛选缺陷表格，返回 (table_data, status_text)"""
-            date_start = _parse_date(ds)
-            date_end = _parse_date(de)
+            """多维筛选缺陷表格"""
+            date_start = ds.strip() if ds and ds.strip() else None
+            date_end = de.strip() if de and de.strip() else None
 
             if not any([models, versions, titles, date_start, date_end]):
                 # 无筛选条件，显示全部
@@ -1362,16 +1354,18 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
         def refresh_with_filters(ds, de, models, versions):
             return filter_defect_table(models, versions, None, ds, de)
 
-        # 筛选按钮 + 下拉自动刷新
-        refresh_btn.click(refresh_with_filters, [date_start, date_end, model_filter, ver_filter],
+        # 日期输入框回车触发 + 下拉自动刷新
+        date_start.submit(refresh_with_filters, [date_start, date_end, model_filter, ver_filter],
                           [defect_table, defect_status])
-        clear_filters_btn.click(
-            lambda: (None, None, None, None, _build_defect_table(), f"共 {len(_DEFECT_CACHE)} 条"),
-            None, [date_start, date_end, model_filter, ver_filter, defect_table, defect_status])
+        date_end.submit(refresh_with_filters, [date_start, date_end, model_filter, ver_filter],
+                        [defect_table, defect_status])
         model_filter.change(refresh_with_filters, [date_start, date_end, model_filter, ver_filter],
                             [defect_table, defect_status])
         ver_filter.change(refresh_with_filters, [date_start, date_end, model_filter, ver_filter],
                           [defect_table, defect_status])
+        clear_filters_btn.click(
+            lambda: ("", "", None, None, _build_defect_table(), f"共 {len(_DEFECT_CACHE)} 条"),
+            None, [date_start, date_end, model_filter, ver_filter, defect_table, defect_status])
 
         # 表格点击查看详情
         defect_table.select(view_defect_by_row_fn, None, defect_detail)
