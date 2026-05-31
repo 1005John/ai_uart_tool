@@ -1257,48 +1257,22 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                 _init_all_sets = sorted(s.rstrip('_') for s in list_test_sets())
                 set_checkboxes.choices = [(s, s) for s in _init_all_sets]
 
-    # ── 缺陷管理标签页（含多维筛选） ──
+    # ── 缺陷管理标签页 ──
     with gr.Tab("🐛 缺陷管理") as defect_tab:
-        gr.Markdown("### 🐛 缺陷管理 | 多维筛选（选一个或多个维度，结果自动更新到下方表格）")
-
-        # 初始化筛选项
-        _filter_opts = session.knowledge_agent.querier.get_filter_options()
-
-        # 📅 日期范围筛选（年月日下拉选择）+ 多维筛选
+        # 筛选行
         with gr.Row():
-            gr.Markdown("📅 起始:")
-            sy = gr.Dropdown(label="年", choices=[str(y) for y in range(2024, 2028)],
-                             value="2026", scale=1)
-            sm = gr.Dropdown(label="月", choices=[f"{m:02d}" for m in range(1, 13)],
-                             value="05", scale=1)
-            sd = gr.Dropdown(label="日", choices=[f"{d:02d}" for d in range(1, 32)],
-                             value="28", scale=1)
-            gr.Markdown("至")
-            ey = gr.Dropdown(label="年", choices=[str(y) for y in range(2024, 2028)],
-                             value="2026", scale=1)
-            em = gr.Dropdown(label="月", choices=[f"{m:02d}" for m in range(1, 13)],
-                             value="05", scale=1)
-            ed = gr.Dropdown(label="日", choices=[f"{d:02d}" for d in range(1, 32)],
-                             value="29", scale=1)
-            date_confirm_btn = gr.Button("✅ 确认日期", variant="primary")
-            model_filter = gr.Dropdown(
-                label="🔧 模组型号", choices=_filter_opts.get('models', []),
-                multiselect=True, scale=1)
-            ver_filter = gr.Dropdown(
-                label="📀 固件版本", choices=_filter_opts.get('versions', []),
-                multiselect=True, scale=1)
-            title_filter = gr.Dropdown(
-                label="🎯 缺陷标题", choices=_filter_opts.get('defect_titles', []),
-                multiselect=True, scale=2)
-
-        # 📅 清空筛选按钮
-        with gr.Row():
-            refresh_defect_btn = gr.Button("🔄 刷新列表", variant="secondary", scale=1)
+            date_start = gr.DateTime(label="起始日期", include_time=False, value=None, scale=1)
+            date_end = gr.DateTime(label="截止日期", include_time=False, value=None, scale=1)
+            model_filter = gr.Dropdown(label="🔧 型号", choices=[], multiselect=True, scale=1)
+            ver_filter = gr.Dropdown(label="📀 版本", choices=[], multiselect=True, scale=1)
             clear_filters_btn = gr.Button("🗑️ 清空筛选", scale=1)
 
-        # ── 缺陷列表 + 详情（左右布局）──
+        # ── 缺陷列表 + 详情 ──
         with gr.Row():
             with gr.Column(scale=1, min_width=350):
+                with gr.Row():
+                    batch_delete_btn = gr.Button("🗑️ 批量删除勾选", scale=1)
+                    defect_status = gr.Markdown(f"共 {len(_DEFECT_CACHE)} 条")
                 defect_table = gr.Dataframe(
                     value=_build_defect_table(),
                     headers=["☑", "ID", "标题", "型号", "版本号", "测试时间", "状态"],
@@ -1306,36 +1280,27 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                     column_count=7, interactive=True, row_count=20,
                     label="勾选操作 | 点击行查看详情",
                 )
-                with gr.Row():
-                    batch_delete_btn = gr.Button("🗑️ 批量删除", scale=1)
-                    defect_id_input = gr.Number(value=0, label="ID", scale=1, precision=0)
-                    view_defect_btn = gr.Button("👁️ 查看", scale=1)
-                    gen_defect_btn = gr.Button("📋 生成缺陷", scale=1)
-                defect_status = gr.Markdown(f"### 💡 共 {len(_DEFECT_CACHE)} 条")
-
-                # ── 提交到灵畿 ──
-                gr.Markdown("### ⬆️ 提交灵畿")
+                # 提交灵畿
                 with gr.Row():
                     lingji_project_dd = gr.Dropdown(label="📁 项目", choices=[], interactive=True, scale=2)
                     lingji_handler_dd = gr.Dropdown(label="👤 责任人", choices=[], interactive=True, scale=2)
-                with gr.Row():
-                    fetch_projects_btn = gr.Button("🔄 获取项目", scale=1)
+                    fetch_projects_btn = gr.Button("🔄 获取", scale=1)
                     lingji_confirm_btn = gr.Button("⬆️ 提交勾选", variant="primary", scale=1)
                 lingji_progress = gr.Markdown("")
 
             with gr.Column(scale=1, min_width=300):
                 defect_detail = gr.Markdown("### 点击缺陷行查看详情")
 
-        # ── 筛选函数 ──
-        def filter_defect_table(models, versions, titles, sy, sm, sd, ey, em, ed):
+        # ── 辅助函数 ──
+        def _parse_date(dt_val):
+            """DateTime 组件可能返回 ISO 字符串或 None"""
+            if not dt_val: return None
+            return str(dt_val)[:10]  # 取 YYYY-MM-DD
+
+        def filter_defect_table(models, versions, titles, ds, de):
             """多维筛选缺陷表格，返回 (table_data, status_text)"""
-            # 组装日期
-            date_start = None
-            date_end = None
-            if sy and sm and sd:
-                date_start = f"{sy}-{sm}-{sd}"
-            if ey and em and ed:
-                date_end = f"{ey}-{em}-{ed}"
+            date_start = _parse_date(ds)
+            date_end = _parse_date(de)
 
             if not any([models, versions, titles, date_start, date_end]):
                 # 无筛选条件，显示全部
@@ -1390,41 +1355,29 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
             return defect_rows, " | ".join(lines)
 
         # ── 事件绑定 ──
-        refresh_defect_btn.click(
-            filter_defect_table,
-            [model_filter, ver_filter, title_filter, sy, sm, sd, ey, em, ed],
-            [defect_table, defect_status])
-        date_confirm_btn.click(
-            filter_defect_table,
-            [model_filter, ver_filter, title_filter, sy, sm, sd, ey, em, ed],
-            [defect_table, defect_status])
+        def refresh_with_filters(ds, de, models, versions):
+            return filter_defect_table(models, versions, None, ds, de)
+
+        # 日期/筛选变化自动刷新
+        date_start.change(refresh_with_filters, [date_start, date_end, model_filter, ver_filter],
+                          [defect_table, defect_status])
+        date_end.change(refresh_with_filters, [date_start, date_end, model_filter, ver_filter],
+                        [defect_table, defect_status])
+        model_filter.change(refresh_with_filters, [date_start, date_end, model_filter, ver_filter],
+                            [defect_table, defect_status])
+        ver_filter.change(refresh_with_filters, [date_start, date_end, model_filter, ver_filter],
+                          [defect_table, defect_status])
+
         clear_filters_btn.click(
-            lambda: (None, None, None, "2026", "05", "28", "2026", "05", "29",
-                     _build_defect_table(),
-                     f"### 💡 共 {len(_DEFECT_CACHE)} 条缺陷 | 筛选项已清空"),
-            None, [model_filter, ver_filter, title_filter, sy, sm, sd, ey, em, ed,
-                   defect_table, defect_status])
-        # 多维筛选项变化时自动刷新
-        for dd in [model_filter, ver_filter, title_filter]:
-            dd.change(
-                filter_defect_table,
-                [model_filter, ver_filter, title_filter, sy, sm, sd, ey, em, ed],
-                [defect_table, defect_status])
+            lambda: (None, None, None, None, _build_defect_table(), f"共 {len(_DEFECT_CACHE)} 条"),
+            None, [date_start, date_end, model_filter, ver_filter, defect_table, defect_status])
 
         # 表格点击查看详情
         defect_table.select(view_defect_by_row_fn, None, defect_detail)
         # 批量删除
         batch_delete_btn.click(batch_delete_defect_fn, [defect_table],
                                [defect_table, defect_status])
-        # 按ID查看
-        view_defect_btn.click(view_defect_by_id_fn, [defect_id_input], defect_detail)
-        # 生成缺陷
-        gen_defect_btn.click(gen_defects_from_result, None, defect_status).then(
-            filter_defect_table,
-            [model_filter, ver_filter, title_filter, sy, sm, sd, ey, em, ed],
-            [defect_table, defect_detail])
-
-        # 提交到灵畿
+        # 提交灵畿
         fetch_projects_btn.click(fetch_projects_for_lingji_fn, None,
                                  [lingji_project_dd, lingji_handler_dd, lingji_progress])
         lingji_confirm_btn.click(submit_checked_to_lingji_fn,
