@@ -809,7 +809,7 @@ def submit_checked_to_lingji_fn(project_code, handler_id, table_data):
 
 # ── 构建 UI ──
 
-with gr.Blocks(title="AI Native UART Tool", fill_height=True) as ui:
+with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) as ui:
     gr.Markdown(f"### 🔧 AI Native UART Tool")
 
     # ── 测试方案与执行标签页 ──
@@ -1471,7 +1471,10 @@ if __name__ == "__main__":
     ui.launch(server_name="0.0.0.0", server_port=7860, head="""<style>
 #serial-bar { position: sticky; top: 0; z-index: 100; background: var(--background-fill-primary, #fff); padding: 6px 0; border-bottom: 1px solid var(--border-color-primary, #ddd); margin-bottom: 4px; }
 html { scroll-behavior: auto; }
-.gradio-container { overflow: visible; }
+.gradio-container { overflow: visible; max-width: 100% !important; }
+.gradio-container .contain { max-width: 100% !important; padding: 0 8px !important; }
+/* 强制全宽 */
+.app, .main, .wrap, .tabitem, .tabs > div { max-width: 100% !important; }
 </style>
 <script>
 (function(){
