@@ -1038,6 +1038,7 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                         )
                         exec_plan_btn = gr.Button("🚀 执行勾选用例", variant="primary")
                         plan_exec_status = gr.Markdown("")
+                        plan_exec_log = gr.Textbox(label="AT指令日志", lines=12, max_lines=20, interactive=False, placeholder="执行后将显示发送/接收的AT指令...")
 
                 # ── 方案管理事件 ──
                 def refresh_plan_radio():
@@ -1119,20 +1120,17 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                                     [plan_case_table, plan_exec_status, plan_set_status])
 
                 def exec_plan(plan_name, table_data):
-                    """执行方案：读取表格勾选行"""
+                    """执行方案：读取表格勾选行，实时输出 AT 指令日志"""
+                    empty = ("### ❌ 请先选择方案", "")
                     if not plan_name:
-                        yield "### ❌ 请先选择方案"
-                        return
+                        yield empty; return
                     if not serial.is_connected():
-                        yield "### ❌ 请先连接串口"
-                        return
+                        yield ("### ❌ 请先连接串口", ""); return
                     raw_cases, err = merge_plan_to_exec_list(plan_name)
                     if err:
-                        yield f"### ❌ {err}"
-                        return
+                        yield (f"### ❌ {err}", ""); return
                     if not raw_cases:
-                        yield "### ❌ 方案无用例"
-                        return
+                        yield ("### ❌ 方案无用例", ""); return
 
                     from models.schemas import TestCase as TC
                     import pandas as pd
@@ -1147,7 +1145,7 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                     checked_indices = set()
                     idx = 0
                     for i, r in enumerate(rows):
-                        if str(r[1]).strip():  # has set name → real case
+                        if str(r[1]).strip():
                             tc = TC(
                                 excel_file='', sheet_name=str(r[3])[:45] if len(r) > 3 else '',
                                 row_id=0, test_group=str(r[1]),
@@ -1158,20 +1156,16 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                                 delay_after=int(r[5]) if len(r) > 5 and str(r[5]).strip() else 0,
                             )
                             all_cases.append((str(r[1]), tc))
-                            if r[0]:  # checked
-                                checked_indices.add(idx)
+                            if r[0]: checked_indices.add(idx)
                             idx += 1
 
-                    if checked_indices:
-                        cases = [(sn, tc) for i, (sn, tc) in enumerate(all_cases) if i in checked_indices]
-                    else:
-                        cases = all_cases
-
+                    cases = [(sn, tc) for i, (sn, tc) in enumerate(all_cases) if i in checked_indices] if checked_indices else all_cases
                     if not cases:
-                        yield "### ❌ 未选中任何用例"
-                        return
+                        yield ("### ❌ 未选中任何用例", ""); return
 
-                    yield f"### 🚀 执行「{plan_name}」{len(cases)}/{len(all_cases)} 条\n"
+                    log_lines = [f"═══ 执行方案: {plan_name} ═══", f"串口: {serial.port} @ {serial.baudrate}", f"用例数: {len(cases)}/{len(all_cases)}\n"]
+                    yield (f"### 🚀 执行「{plan_name}」{len(cases)}/{len(all_cases)} 条\n", "\n".join(log_lines))
+
                     executor = session.test_agent.executor
                     executor.serial = serial
                     from models.database import create_session as db_create_session, end_session, update_session_stats
@@ -1182,51 +1176,56 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                     passed, failed = 0, 0
                     results = []
                     for i, (sn, case) in enumerate(cases, 1):
-                        yield f"🔄 [{i}/{len(cases)}] [{sn}] {case.case_name} ..."
+                        at_cmd = case.params.get('send_data', '') if hasattr(case, 'params') else ''
+                        log_lines.append(f"\n[{i}/{len(cases)}] [{sn}] {case.case_name}")
+                        log_lines.append(f">>> {at_cmd}")
+                        status = f"🔄 [{i}/{len(cases)}] [{sn}] {case.case_name} ..."
+                        yield (status, "\n".join(log_lines))
+
                         run = executor.execute_case(case, db_sid, port=serial.port, baudrate=serial.baudrate)
                         results.append(run)
+                        actual = (run.actual or '').strip()[:150]
+                        log_lines.append(f"<<< {actual}")
                         if run.status == 'PASS':
                             passed += 1
-                            yield f"  ✅ {case.case_name} ({run.duration_ms}ms)"
+                            log_lines.append(f"结果: ✅ PASS ({run.duration_ms}ms)")
+                            status = f"  ✅ {case.case_name} ({run.duration_ms}ms)"
                         elif run.status == 'FAIL':
                             failed += 1
-                            yield f"  ❌ {case.case_name} ({run.duration_ms}ms)"
-                            if run.fail_reason:
-                                yield f"     原因: {run.fail_reason[:80]}"
+                            log_lines.append(f"结果: ❌ FAIL ({run.duration_ms}ms) - {run.fail_reason or '未知'}")
+                            status = f"  ❌ {case.case_name} ({run.duration_ms}ms)"
                         else:
-                            yield f"  ⚠️ {case.case_name}"
+                            log_lines.append(f"结果: ⚠️ {run.status}")
+                            status = f"  ⚠️ {case.case_name}"
+                        yield (status, "\n".join(log_lines))
+
                     update_session_stats(db_sid)
                     summary = f"✅ {passed} | ❌ {failed} | 共 {len(cases)}"
                     end_session(db_sid, summary=summary)
                     _save_exec_result(results, summary, plan_name)
-                    yield f"\n### 📊 {summary}"
+                    log_lines.append(f"\n═══ 执行完成: {summary} ═══")
+                    yield (f"\n### 📊 {summary}", "\n".join(log_lines))
                     if failed > 0:
-                        yield f"\n💡 切换到「🐛 缺陷管理」查看自动生成的缺陷"
+                        yield (f"\n💡 切换到「🐛 缺陷管理」", "\n".join(log_lines))
                         try:
                             ok = 0
                             for r in results:
-                                if r.status != 'FAIL':
-                                    continue
-                                at_cmd = r.at_command or ''
-                                actual = (r.actual or '').strip()[:200]
-                                desc = (
-                                    f"## 缺陷报告\n\n"
-                                    f"### 测试环境\n- **方案:** {plan_name}\n"
+                                if r.status != 'FAIL': continue
+                                desc = (f"## 缺陷报告\n\n### 测试环境\n- **方案:** {plan_name}\n"
                                     f"- **串口:** {serial.port} @ {serial.baudrate}\n"
-                                    f"- **测试指令:** `{at_cmd}`\n"
+                                    f"- **测试指令:** `{r.at_command or ''}`\n"
                                     f"- **指令耗时:** {r.duration_ms}ms\n\n"
-                                    f"### 实际结果\n```\n{actual}\n```\n"
-                                    f"**失败原因:** {r.fail_reason or '未知'}\n"
-                                )
+                                    f"### 实际结果\n```\n{(r.actual or '').strip()[:200]}\n```\n"
+                                    f"**失败原因:** {r.fail_reason or '未知'}\n")
                                 res = session.defect_agent.create_local(r, description=desc)
-                                if res['ok']:
-                                    ok += 1
+                                if res['ok']: ok += 1
                             if ok > 0:
-                                yield f"✅ 已自动生成 {ok} 条本地缺陷"
+                                log_lines.append(f"已自动生成 {ok} 条本地缺陷")
+                                yield (f"✅ 已自动生成 {ok} 条本地缺陷", "\n".join(log_lines))
                         except Exception as e:
-                            yield f"⚠️ 缺陷生成失败: {e}"
+                            yield (f"⚠️ 缺陷生成失败: {e}", "\n".join(log_lines))
 
-                exec_plan_btn.click(exec_plan, [plan_radio, plan_case_table], [plan_exec_status])
+                exec_plan_btn.click(exec_plan, [plan_radio, plan_case_table], [plan_exec_status, plan_exec_log])
 
                 # 初始加载
                 _init_plans = sorted(list_plans())
