@@ -1268,12 +1268,6 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
             refresh_btn = gr.Button("🔍 筛选", scale=1)
             clear_filters_btn = gr.Button("🗑️ 清空", scale=1)
 
-        # 必须在同一层级立即绑定
-        refresh_btn.click(refresh_with_filters, [date_start, date_end, model_filter, ver_filter],
-                          [defect_table, defect_status])
-        clear_filters_btn.click(
-            lambda: (None, None, None, None, _build_defect_table(), f"共 {len(_DEFECT_CACHE)} 条"),
-            None, [date_start, date_end, model_filter, ver_filter, defect_table, defect_status])
 
         # ── 缺陷列表 + 详情 ──
         with gr.Row():
@@ -1368,7 +1362,12 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
         def refresh_with_filters(ds, de, models, versions):
             return filter_defect_table(models, versions, None, ds, de)
 
-        # 下拉自动刷新
+        # 筛选按钮 + 下拉自动刷新
+        refresh_btn.click(refresh_with_filters, [date_start, date_end, model_filter, ver_filter],
+                          [defect_table, defect_status])
+        clear_filters_btn.click(
+            lambda: (None, None, None, None, _build_defect_table(), f"共 {len(_DEFECT_CACHE)} 条"),
+            None, [date_start, date_end, model_filter, ver_filter, defect_table, defect_status])
         model_filter.change(refresh_with_filters, [date_start, date_end, model_filter, ver_filter],
                             [defect_table, defect_status])
         ver_filter.change(refresh_with_filters, [date_start, date_end, model_filter, ver_filter],
