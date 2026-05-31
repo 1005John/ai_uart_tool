@@ -1221,6 +1221,16 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                     update_session_stats(db_sid)
                     summary = f"✅ {total_pass} | ❌ {total_fail} | {len(cases)}条 × {loops}轮"
                     end_session(db_sid, summary=summary)
+
+                    # 保存完整执行日志
+                    full_log = "\n".join(log_lines)
+                    import json as _json
+                    log_path = os.path.join(os.path.dirname(__file__), "data", "last_exec_log.json")
+                    with open(log_path, 'w', encoding='utf-8') as _f:
+                        _json.dump({"plan": plan_name, "summary": summary, "log": full_log,
+                                     "lines": log_lines, "time": datetime.now().isoformat()},
+                                    _f, ensure_ascii=False, indent=2)
+
                     _save_exec_result(all_results, summary, plan_name)
                     log_lines.append(f"\n═══ 完成: {summary} ═══")
                     yield (f"\n### 📊 {summary}", "\n".join(log_lines))
@@ -1234,12 +1244,13 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                                     f"- **串口:** {serial.port} @ {serial.baudrate}\n"
                                     f"- **测试指令:** `{r.at_command or ''}`\n- **指令耗时:** {r.duration_ms}ms\n\n"
                                     f"### 实际结果\n```\n{(r.actual or '').strip()[:200]}\n```\n"
-                                    f"**失败原因:** {r.fail_reason or '未知'}\n")
+                                    f"**失败原因:** {r.fail_reason or '未知'}\n\n"
+                                    f"### 完整执行日志\n```\n{full_log}\n```\n")
                                 res = session.defect_agent.create_local(r, description=desc)
                                 if res['ok']: ok += 1
                             if ok > 0:
-                                log_lines.append(f"已自动生成 {ok} 条本地缺陷")
-                                yield (f"✅ {ok} 条本地缺陷", "\n".join(log_lines))
+                                log_lines.append(f"已自动生成 {ok} 条本地缺陷（含完整日志）")
+                                yield (f"✅ {ok} 条本地缺陷（含完整日志）", "\n".join(log_lines))
                         except Exception as e:
                             yield (f"⚠️ 缺陷生成失败: {e}", "\n".join(log_lines))
 
@@ -1281,6 +1292,17 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                     column_count=7, interactive=True, row_count=20,
                     label="勾选操作 | 点击行查看详情",
                 )
+                # 手动创建缺陷（从执行日志）
+                gr.Markdown("---")
+                gr.Markdown("### 📝 从执行日志创建缺陷")
+                manual_defect_title = gr.Textbox(label="缺陷标题", placeholder="自定义缺陷标题")
+                manual_defect_log = gr.Textbox(label="执行日志（可编辑）", lines=6, max_lines=15,
+                                               placeholder="上次执行的完整日志将自动加载到这里，可编辑后保存")
+                with gr.Row():
+                    load_log_btn = gr.Button("📋 加载上次日志", scale=1)
+                    create_manual_defect_btn = gr.Button("💾 创建缺陷", variant="primary", scale=1)
+                manual_defect_status = gr.Markdown("")
+
                 # 提交灵畿
                 with gr.Row():
                     lingji_project_dd = gr.Dropdown(label="📁 项目", choices=[], interactive=True, scale=2)
@@ -1372,6 +1394,37 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
         # 批量删除
         batch_delete_btn.click(batch_delete_defect_fn, [defect_table],
                                [defect_table, defect_status])
+
+        # 手动创建缺陷
+        def load_last_log():
+            try:
+                log_path = os.path.join(os.path.dirname(__file__), "data", "last_exec_log.json")
+                if os.path.exists(log_path):
+                    with open(log_path, 'r') as f:
+                        data = json.load(f)
+                    log_text = data.get('log', '')
+                    title = f"【手动】{data.get('plan','')} 执行缺陷"
+                    return title, log_text, f"### ✅ 已加载 {data.get('plan','')} 的日志"
+                return "", "", "### ❌ 没有找到执行日志，请先执行方案"
+            except:
+                return "", "", "### ❌ 日志加载失败"
+
+        load_log_btn.click(load_last_log, None, [manual_defect_title, manual_defect_log, manual_defect_status])
+
+        def create_manual_defect(title, log_text):
+            if not title or not title.strip():
+                return "### ❌ 请输入标题"
+            if not log_text or not log_text.strip():
+                return "### ❌ 日志为空"
+            desc = f"## 缺陷报告（手动创建）\n\n### 执行日志\n```\n{log_text}\n```\n"
+            did = session.defect_agent.store.create_defect(title=title.strip(), description=desc)
+            if did:
+                return f"### ✅ 已创建缺陷 #{did}「{title}」"
+            return "### ❌ 创建失败"
+
+        create_manual_defect_btn.click(create_manual_defect, [manual_defect_title, manual_defect_log],
+                                       [manual_defect_status])
+
         # 提交灵畿
         fetch_projects_btn.click(fetch_projects_for_lingji_fn, None,
                                  [lingji_project_dd, lingji_handler_dd, lingji_progress])
