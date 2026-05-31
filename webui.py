@@ -809,8 +809,8 @@ def submit_checked_to_lingji_fn(project_code, handler_id, table_data):
 
 # ── 构建 UI ──
 
-with gr.Blocks(title="AI Native UART Tool") as ui:
-    gr.Markdown(f"# 🔧 AI Native UART Tool  `{get_db_path()}`")
+with gr.Blocks(title="AI Native UART Tool", fill_height=True) as ui:
+    gr.Markdown(f"### 🔧 AI Native UART Tool")
 
     # ── 测试方案与执行标签页 ──
     # ── 测试方案与执行标签页 ──
@@ -823,7 +823,6 @@ with gr.Blocks(title="AI Native UART Tool") as ui:
             gr.Button("🔍 扫描", scale=1).click(scan_fn, None, port_dd)
             gr.Button("✅ 连接", scale=1).click(connect_fn, [port_dd, baud_in], status_box)
             gr.Button("❌ 断开", scale=1).click(disconnect_fn, None, status_box)
-        gr.Markdown("---")
 
         # ══════════════════════════════════
         # 子标签：用例集库 | 方案管理
@@ -1469,13 +1468,19 @@ if __name__ == "__main__":
         host = "127.0.0.1"
     print(f"\n🌐 http://localhost:7860  (本机: http://{host}:7860)\n")
     ui.launch(server_name="0.0.0.0", server_port=7860, head="""<style>
-html,body{overflow:hidden!important;height:100vh!important;position:fixed;width:100%}
-.gradio-container{height:100vh!important;overflow-y:auto!important}
+html,body{overflow:hidden!important;height:100vh!important;margin:0;padding:0}
+.gradio-container{height:100vh!important;overflow:hidden!important;display:flex;flex-direction:column}
+.gradio-container>.main{flex:1;overflow:hidden!important}
+/* 只有 Dataframe 可以有滚动条 */
+table{overflow:auto!important}
 </style><script>
 window.addEventListener('load',function(){
-  var s=document.querySelector('.gradio-container');
-  if(s){s._scrollTop=s.scrollTop;setInterval(function(){if(s.scrollTop!==s._scrollTop){s.scrollTop=s._scrollTop}},50)}
   Element.prototype._scrollIntoView=Element.prototype.scrollIntoView;
   Element.prototype.scrollIntoView=function(){};
+  setTimeout(function(){
+    document.querySelectorAll('.gradio-container [style*="overflow"]').forEach(function(el){
+      if(!el.closest('table')&&!el.closest('[data-testid="dataframe"]'))el.style.overflow='hidden';
+    });
+  },500);
 })
 </script>""")
