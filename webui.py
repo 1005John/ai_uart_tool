@@ -1022,10 +1022,8 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                         plan_radio = gr.Radio(label="选择方案", choices=[], interactive=True)
                         plan_status = gr.Markdown("")
                         gr.Markdown("---")
-                        gr.Markdown("### 可选用例集")
-                        with gr.Row():
-                            save_sets_btn = gr.Button("💾 保存勾选", scale=1)
-                        set_checkboxes = gr.CheckboxGroup(label="勾选→保存", choices=[], interactive=True, elem_id="plan-sets")
+                        gr.Markdown("### 可选用例集（勾选即保存）")
+                        set_checkboxes = gr.CheckboxGroup(label="勾选即加入方案", choices=[], interactive=True)
                         plan_set_status = gr.Markdown("")
 
                     # 中：用例表格 + 执行
@@ -1121,8 +1119,8 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                     case_rows, msg = load_plan_cases(plan_name)
                     return case_rows, msg, f"### ✅ 已保存，{len(checked)} 个用例集"
 
-                save_sets_btn.click(on_set_check, [plan_radio, set_checkboxes],
-                                    [plan_case_table, plan_exec_status, plan_set_status])
+                set_checkboxes.change(on_set_check, [plan_radio, set_checkboxes],
+                                      [plan_case_table, plan_exec_status, plan_set_status])
 
                 def exec_plan(plan_name, table_data):
                     """执行方案：读取表格勾选行，实时输出 AT 指令日志"""
