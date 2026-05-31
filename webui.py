@@ -1012,33 +1012,38 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
             # ── 方案管理 ──────────────────
             with gr.Tab("📋 方案管理"):
                 with gr.Row():
-                    with gr.Column(scale=1, min_width=220):
-                        gr.Markdown("### 方案列表")
-                        plan_radio = gr.Radio(label="选择方案", choices=[], interactive=True)
+                    # 左：方案管理
+                    with gr.Column(scale=1, min_width=200):
                         with gr.Row():
-                            new_plan_name = gr.Textbox(label="新方案名称", placeholder="输入名称", scale=2)
-                            new_plan_btn = gr.Button("➕ 新建", scale=1)
-                        del_plan_btn = gr.Button("🗑️ 删除选中方案", scale=1)
+                            new_plan_btn = gr.Button("➕ 新建方案", scale=1)
+                            del_plan_btn = gr.Button("🗑️ 删除", scale=1)
+                            refresh_plan_btn = gr.Button("🔄 刷新", scale=1)
+                        new_plan_name = gr.Textbox(label="新方案名称", placeholder="输入名称")
+                        plan_radio = gr.Radio(label="选择方案", choices=[], interactive=True)
                         plan_status = gr.Markdown("")
-
-                        refresh_plan_btn = gr.Button("🔄 刷新", scale=1)
                         gr.Markdown("---")
                         gr.Markdown("### 可选用例集")
-                        set_checkboxes = gr.CheckboxGroup(label="勾选后点保存", choices=[], interactive=True)
-                        save_sets_btn = gr.Button("💾 保存勾选", variant="primary", scale=1)
+                        with gr.Row():
+                            save_sets_btn = gr.Button("💾 保存勾选", scale=1)
+                        set_checkboxes = gr.CheckboxGroup(label="勾选→保存", choices=[], interactive=True, elem_id="plan-sets")
                         plan_set_status = gr.Markdown("")
 
-                    with gr.Column(scale=2, min_width=380):
-                        gr.Markdown("### 方案全部用例（只读）")
+                    # 中：用例表格 + 执行
+                    with gr.Column(scale=2, min_width=350):
+                        gr.Markdown("### 方案用例")
                         plan_case_table = gr.Dataframe(
                             headers=["☑", "用例集", "用例名称", "AT指令", "超时", "延迟"],
                             datatype=["bool", "str", "str", "str", "str", "str"],
-                            column_count=6, interactive=True, row_count=20,
+                            column_count=6, interactive=True, row_count=15,
                             label="勾选→执行",
                         )
                         exec_plan_btn = gr.Button("🚀 执行勾选用例", variant="primary")
                         plan_exec_status = gr.Markdown("")
-                        plan_exec_log = gr.Textbox(label="AT指令日志", lines=12, max_lines=20, interactive=False, placeholder="执行后将显示发送/接收的AT指令...")
+
+                    # 右：执行日志
+                    with gr.Column(scale=2, min_width=300):
+                        gr.Markdown("### 执行日志")
+                        plan_exec_log = gr.Textbox(lines=18, max_lines=30, interactive=False, placeholder="执行后将实时显示AT指令收发...", show_label=False)
 
                 # ── 方案管理事件 ──
                 def refresh_plan_radio():
