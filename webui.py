@@ -836,9 +836,12 @@ with gr.Blocks(title="AI Native UART Tool") as ui:
                         gr.Markdown("### 用例集列表")
                         set_radio = gr.Radio(label="选择用例集", choices=[], interactive=True)
                         with gr.Row():
-                            new_set_name = gr.Textbox(label="新用例集名称", placeholder="输入名称", scale=2)
-                            new_set_btn = gr.Button("➕ 新建", scale=1)
-                        del_set_btn = gr.Button("🗑️ 删除选中用例集", scale=1)
+                            new_set_name = gr.Textbox(label="新建", placeholder="输入名称", scale=2)
+                            new_set_btn = gr.Button("➕", scale=1)
+                        with gr.Row():
+                            rename_set_name = gr.Textbox(label="重命名", placeholder="新名称", scale=2)
+                            rename_set_btn = gr.Button("✏️", scale=1)
+                        del_set_btn = gr.Button("🗑️ 删除选中", scale=1)
                         set_lib_status = gr.Markdown("")
 
                     with gr.Column(scale=2, min_width=350):
@@ -853,6 +856,9 @@ with gr.Blocks(title="AI Native UART Tool") as ui:
                             add_case_btn = gr.Button("➕ 添加", variant="primary", scale=1)
                             del_case_idx = gr.Number(label="删#", value=1, precision=0, scale=1)
                             del_case_btn = gr.Button("🗑️", scale=1)
+                            move_idx = gr.Number(label="移#", value=1, precision=0, scale=1)
+                            move_up_btn = gr.Button("⬆", scale=1)
+                            move_down_btn = gr.Button("⬇", scale=1)
                         set_case_status = gr.Markdown("")
 
                 # ── 用例集库事件 ──
@@ -928,6 +934,58 @@ with gr.Blocks(title="AI Native UART Tool") as ui:
 
                 del_set_btn.click(delete_set, [set_radio], [set_radio, set_case_html])
 
+                def rename_set(old_name, new_name):
+                    if not old_name:
+                        return refresh_set_radio(), "", "### ❌ 请先选择用例集"
+                    if not new_name or not new_name.strip():
+                        return refresh_set_radio(), "", "### ❌ 请输入新名称"
+                    new_name = new_name.strip()
+                    if new_name == old_name:
+                        return refresh_set_radio(), "", "### ⏭️ 名称未变"
+                    if new_name in _clean_set_names():
+                        return refresh_set_radio(), "", f"### ⏭️ 「{new_name}」已存在"
+                    ts = load_test_set(old_name)
+                    if ts:
+                        save_test_set(new_name, ts.get('cases', []))
+                        delete_test_set(old_name)
+                    # 更新引用该用例集的方案
+                    for pname in list_plans():
+                        plan = load_plan(pname)
+                        if plan:
+                            sn = plan.get('test_set_names', [])
+                            if old_name in sn:
+                                sn[sn.index(old_name)] = new_name
+                                save_plan(pname, sn, loop_count=plan.get('loop_count', 1),
+                                          global_delay=plan.get('global_delay'))
+                    return refresh_set_radio(), "", f"### ✅ 已重命名「{old_name}」→「{new_name}」"
+
+                rename_set_btn.click(rename_set, [set_radio, rename_set_name],
+                                     [set_radio, rename_set_name, set_lib_status])
+
+                def move_case(set_name, idx, direction):
+                    if not set_name:
+                        return render_cases_html(set_name), "### ❌ 请先选择用例集"
+                    ts = load_test_set(set_name)
+                    cases = ts.get('cases', []) if ts else []
+                    i = int(idx) - 1 if idx else -1
+                    if i < 0 or i >= len(cases):
+                        return render_cases_html(set_name), f"### ❌ 序号 {idx} 无效"
+                    if direction == 'up' and i > 0:
+                        cases[i], cases[i-1] = cases[i-1], cases[i]
+                        new_i = i
+                    elif direction == 'down' and i < len(cases) - 1:
+                        cases[i], cases[i+1] = cases[i+1], cases[i]
+                        new_i = i + 2
+                    else:
+                        return render_cases_html(set_name), "### ⏭️ 无法移动"
+                    save_test_set(set_name, cases)
+                    return render_cases_html(set_name), f"### ✅ 已移动到第 {new_i} 位"
+
+                move_up_btn.click(lambda s, i: move_case(s, i, 'up'), [set_radio, move_idx],
+                                  [set_case_html, set_case_status])
+                move_down_btn.click(lambda s, i: move_case(s, i, 'down'), [set_radio, move_idx],
+                                    [set_case_html, set_case_status])
+
                 def add_case(set_name, case_name, cmd, timeout, delay):
                     if not set_name:
                         return render_cases_html(set_name), "### ❌ 请先选择用例集"
@@ -989,21 +1047,25 @@ with gr.Blocks(title="AI Native UART Tool") as ui:
                     with gr.Column(scale=2, min_width=380):
                         gr.Markdown("### 方案全部用例（只读）")
                         plan_case_html = gr.HTML('<div style="color:#888;padding:20px;font-size:16px">请选择方案</div>')
+                        case_select = gr.CheckboxGroup(label="勾选要执行的用例（留空=全部执行）", choices=[], interactive=True)
                         exec_plan_btn = gr.Button("🚀 执行方案", variant="primary")
                         plan_exec_status = gr.Markdown("")
 
                 # ── 方案管理事件 ──
                 def _merge_plan_cases(plan_name):
+                    """返回 (html, case_labels) 元组"""
+                    empty = '<div style="color:#888;padding:20px;font-size:16px">请选择方案</div>'
                     if not plan_name:
-                        return '<div style="color:#888;padding:20px;font-size:16px">请选择方案</div>'
+                        return empty, []
                     plan = load_plan(plan_name)
                     if not plan:
-                        return f'<div style="color:red;padding:10px">方案「{plan_name}」不存在</div>'
+                        return f'<div style="color:red;padding:10px">方案「{plan_name}」不存在</div>', []
                     set_names = plan.get('test_set_names', [])
                     if not set_names:
-                        return f'<div style="padding:16px;background:#fff3cd;border-radius:4px"><b>{plan_name}</b> 暂无关联用例集，请在左侧勾选用例集后保存</div>'
+                        return f'<div style="padding:16px;background:#fff3cd;border-radius:4px"><b>{plan_name}</b> 暂无关联用例集，请在左侧勾选用例集后保存</div>', []
                     rows_html = ""
                     total = 0
+                    labels = []
                     for sn in set_names:
                         ts = load_test_set(sn)
                         if not ts:
@@ -1013,6 +1075,8 @@ with gr.Blocks(title="AI Native UART Tool") as ui:
                             cmd = (c.get('at_cmd', '') or c.get('module', ''))[:45]
                             to = c.get('timeout', 10)
                             dl = c.get('delay', '') if c.get('delay') is not None else ''
+                            label = f"[{sn}] {name}"
+                            labels.append(label)
                             rows_html += f'''<tr>
                                 <td style="padding:6px 8px">{sn}</td>
                                 <td style="padding:6px 8px">{name}</td>
@@ -1021,7 +1085,7 @@ with gr.Blocks(title="AI Native UART Tool") as ui:
                                 <td style="text-align:center;width:55px;padding:6px 4px">{dl}ms</td>
                             </tr>'''
                             total += 1
-                    return f'''<div>
+                    html = f'''<div>
                         <div style="margin-bottom:8px;font-weight:600;font-size:15px">
                             📋 {plan_name} · {total} 条（{len(set_names)} 个用例集）
                         </div>
@@ -1038,6 +1102,7 @@ with gr.Blocks(title="AI Native UART Tool") as ui:
                             <tbody>{rows_html}</tbody>
                         </table>
                     </div>'''
+                    return html, labels
 
                 def refresh_plan_radio():
                     plans = sorted(list_plans())
@@ -1045,21 +1110,22 @@ with gr.Blocks(title="AI Native UART Tool") as ui:
 
                 def on_plan_select(plan_name):
                     if not plan_name:
-                        return refresh_plan_radio(), "", gr.CheckboxGroup(choices=[]), [], ""
+                        return refresh_plan_radio(), "", gr.CheckboxGroup(choices=[]), "", "", gr.CheckboxGroup(choices=[])
                     plan = load_plan(plan_name)
                     all_sets = sorted(s.rstrip('_') for s in list_test_sets())
                     selected_sets = plan.get('test_set_names', [])
-                    case_md = _merge_plan_cases(plan_name)
+                    case_html, case_labels = _merge_plan_cases(plan_name)
                     return (refresh_plan_radio(),
                             f"### ✅ 方案「{plan_name}」",
                             gr.CheckboxGroup(choices=[(s, s) for s in all_sets], value=selected_sets),
-                            case_md, case_md)
+                            case_html, case_html,
+                            gr.CheckboxGroup(choices=[(l, l) for l in case_labels], value=None))
 
                 plan_radio.change(on_plan_select, [plan_radio],
-                                  [plan_radio, plan_status, set_checkboxes, plan_case_html, plan_exec_status])
+                                  [plan_radio, plan_status, set_checkboxes, plan_case_html, plan_exec_status, case_select])
 
                 refresh_plan_btn.click(on_plan_select, [plan_radio],
-                                       [plan_radio, plan_status, set_checkboxes, plan_case_html, plan_exec_status])
+                                       [plan_radio, plan_status, set_checkboxes, plan_case_html, plan_exec_status, case_select])
 
                 def create_plan(name):
                     if not name or not name.strip():
@@ -1074,12 +1140,12 @@ with gr.Blocks(title="AI Native UART Tool") as ui:
 
                 def do_delete_plan(plan_name):
                     if not plan_name:
-                        return refresh_plan_radio(), gr.CheckboxGroup(choices=[]), "", "", "### ❌ 请选择方案"
+                        return refresh_plan_radio(), gr.CheckboxGroup(choices=[]), "", "", "### ❌ 请选择方案", gr.CheckboxGroup(choices=[])
                     delete_plan(plan_name)
-                    return refresh_plan_radio(), gr.CheckboxGroup(choices=[]), "", "", f"### ✅ 已删除「{plan_name}」"
+                    return refresh_plan_radio(), gr.CheckboxGroup(choices=[]), "", "", f"### ✅ 已删除「{plan_name}」", gr.CheckboxGroup(choices=[])
 
                 del_plan_btn.click(do_delete_plan, [plan_radio],
-                                   [plan_radio, set_checkboxes, plan_case_html, plan_status, plan_exec_status])
+                                   [plan_radio, set_checkboxes, plan_case_html, plan_status, plan_exec_status, case_select])
 
                 def on_set_check(plan_name, checked_sets):
                     if not plan_name:
@@ -1088,14 +1154,14 @@ with gr.Blocks(title="AI Native UART Tool") as ui:
                     checked = list(checked_sets) if checked_sets else []
                     save_plan(plan_name, checked, loop_count=plan.get('loop_count', 1) if plan else 1,
                               global_delay=plan.get('global_delay') if plan else None)
-                    case_md = _merge_plan_cases(plan_name)
-                    return case_md, case_md, f"### ✅ 已保存，{len(checked)} 个用例集"
+                    case_html, case_labels = _merge_plan_cases(plan_name)
+                    return case_html, case_html, f"### ✅ 已保存，{len(checked)} 个用例集", gr.CheckboxGroup(choices=[(l, l) for l in case_labels])
 
                 save_sets_btn.click(on_set_check, [plan_radio, set_checkboxes],
-                                    [plan_case_html, plan_exec_status, plan_set_status])
+                                    [plan_case_html, plan_exec_status, plan_set_status, case_select])
 
-                def exec_plan(plan_name):
-                    """执行方案：逐条发送 AT 指令，实时显示进度"""
+                def exec_plan(plan_name, selected_labels):
+                    """执行方案：逐条发送 AT 指令，可选择性执行"""
                     if not plan_name:
                         yield "### ❌ 请先选择方案"
                         return
@@ -1110,11 +1176,11 @@ with gr.Blocks(title="AI Native UART Tool") as ui:
                         yield "### ❌ 方案无用例"
                         return
 
-                    # merge_plan_to_exec_list 返回 dict，转为 TestCase 对象
+                    # 转为 TestCase 对象，带所属用例集信息
                     from models.schemas import TestCase as TC
-                    cases = []
+                    all_cases = []
                     for d in raw_cases:
-                        cases.append(TC(
+                        tc = TC(
                             excel_file='', sheet_name=d.get('module', d.get('at_cmd', '')),
                             row_id=0, test_group=d.get('set_name', ''),
                             case_name=d.get('case_name', ''),
@@ -1122,7 +1188,22 @@ with gr.Blocks(title="AI Native UART Tool") as ui:
                             expected_results=[d.get('expected', 'OK')],
                             timeout=d.get('timeout', 10),
                             delay_after=d.get('delay') or 0,
-                        ))
+                        )
+                        all_cases.append((d.get('set_name', ''), tc))
+
+                    # 如果用户勾选了用例，只执行勾选的
+                    if selected_labels:
+                        selected_set = set(selected_labels)
+                        cases = [(sn, tc) for sn, tc in all_cases
+                                 if f"[{sn}] {tc.case_name}" in selected_set]
+                    else:
+                        cases = all_cases
+
+                    if not cases:
+                        yield "### ❌ 未选中任何用例"
+                        return
+
+                    yield f"### 🚀 执行「{plan_name}」{len(cases)}/{len(all_cases)} 条\n"
 
                     yield f"### 🚀 执行「{plan_name}」共 {len(cases)} 条\n"
                     executor = session.test_agent.executor
@@ -1134,8 +1215,8 @@ with gr.Blocks(title="AI Native UART Tool") as ui:
                         baudrate=serial.baudrate, model='', case_level='P0')
                     passed, failed = 0, 0
                     results = []
-                    for i, case in enumerate(cases, 1):
-                        yield f"🔄 [{i}/{len(cases)}] {case.case_name} ..."
+                    for i, (sn, case) in enumerate(cases, 1):
+                        yield f"🔄 [{i}/{len(cases)}] [{sn}] {case.case_name} ..."
                         run = executor.execute_case(case, db_sid, port=serial.port, baudrate=serial.baudrate)
                         results.append(run)
                         if run.status == 'PASS':
@@ -1181,7 +1262,7 @@ with gr.Blocks(title="AI Native UART Tool") as ui:
                         except Exception as e:
                             yield f"⚠️ 缺陷生成失败: {e}"
 
-                exec_plan_btn.click(exec_plan, [plan_radio], [plan_exec_status])
+                exec_plan_btn.click(exec_plan, [plan_radio, case_select], [plan_exec_status])
 
                 # 初始加载
                 _init_plans = sorted(list_plans())
