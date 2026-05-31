@@ -1292,16 +1292,24 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                     column_count=7, interactive=True, row_count=20,
                     label="勾选操作 | 点击行查看详情",
                 )
-                # 手动创建缺陷（从执行日志）
+                # 手动创建缺陷
                 gr.Markdown("---")
-                gr.Markdown("### 📝 从执行日志创建缺陷")
-                manual_defect_title = gr.Textbox(label="缺陷标题", placeholder="自定义缺陷标题")
-                manual_defect_log = gr.Textbox(label="执行日志（可编辑）", lines=6, max_lines=15,
-                                               placeholder="上次执行的完整日志将自动加载到这里，可编辑后保存")
+                gr.Markdown("### 📝 手动创建缺陷")
+                with gr.Row():
+                    manual_title = gr.Textbox(label="缺陷标题", placeholder="例: MQTT连接超时", scale=3)
+                    manual_model = gr.Textbox(label="模组型号", value="ML307H", scale=1)
+                with gr.Row():
+                    manual_at_cmd = gr.Textbox(label="测试指令", placeholder="AT+MQTT=1", scale=1)
+                    manual_duration = gr.Textbox(label="耗时(ms)", value="0", scale=1)
+                    manual_port_info = gr.Textbox(label="串口", value="未连接", scale=1)
+                manual_actual = gr.Textbox(label="实际结果", lines=2, placeholder="ERROR: 513")
+                manual_reason = gr.Textbox(label="失败原因", placeholder="返回错误码 513")
+                manual_full_log = gr.Textbox(label="完整执行日志（可编辑）", lines=8, max_lines=20,
+                                             placeholder="加载上次日志或粘贴日志")
                 with gr.Row():
                     load_log_btn = gr.Button("📋 加载上次日志", scale=1)
-                    create_manual_defect_btn = gr.Button("💾 创建缺陷", variant="primary", scale=1)
-                manual_defect_status = gr.Markdown("")
+                    create_manual_btn = gr.Button("💾 创建缺陷", variant="primary", scale=1)
+                manual_status = gr.Markdown("")
 
                 # 提交灵畿
                 with gr.Row():
@@ -1399,31 +1407,51 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
         def load_last_log():
             try:
                 log_path = os.path.join(os.path.dirname(__file__), "data", "last_exec_log.json")
-                if os.path.exists(log_path):
-                    with open(log_path, 'r') as f:
-                        data = json.load(f)
-                    log_text = data.get('log', '')
-                    title = f"【手动】{data.get('plan','')} 执行缺陷"
-                    return title, log_text, f"### ✅ 已加载 {data.get('plan','')} 的日志"
-                return "", "", "### ❌ 没有找到执行日志，请先执行方案"
+                if not os.path.exists(log_path):
+                    return "", "未连接", "", "0", "", "", "", "### ❌ 没有找到执行日志"
+                with open(log_path, 'r') as f:
+                    data = json.load(f)
+                plan = data.get('plan', '')
+                log_text = data.get('log', '')
+                title = f"【手动】{plan} 执行缺陷"
+                port_info = serial.port if serial.is_connected() else "未连接"
+                return title, port_info, "", "0", "", "", log_text, f"### ✅ 已加载「{plan}」的日志"
             except:
-                return "", "", "### ❌ 日志加载失败"
+                return "", "未连接", "", "0", "", "", "", "### ❌ 日志加载失败"
 
-        load_log_btn.click(load_last_log, None, [manual_defect_title, manual_defect_log, manual_defect_status])
+        load_log_btn.click(load_last_log, None,
+                           [manual_title, manual_port_info, manual_at_cmd, manual_duration,
+                            manual_actual, manual_reason, manual_full_log, manual_status])
 
-        def create_manual_defect(title, log_text):
+        def create_manual_defect(title, model, at_cmd, duration, port_info, actual, reason, log_text):
             if not title or not title.strip():
                 return "### ❌ 请输入标题"
-            if not log_text or not log_text.strip():
-                return "### ❌ 日志为空"
-            desc = f"## 缺陷报告（手动创建）\n\n### 执行日志\n```\n{log_text}\n```\n"
+            desc = (
+                f"## 缺陷报告（手动创建）\n\n"
+                f"### 测试环境\n"
+                f"- **模组型号:** {model}\n"
+                f"- **串口:** {port_info}\n"
+                f"- **测试指令:** `{at_cmd}`\n"
+                f"- **指令耗时:** {duration}ms\n\n"
+                f"### 复现步骤\n"
+                f"1. 连接模组串口（{port_info}）\n"
+                f"2. 发送指令: `{at_cmd}`\n"
+                f"3. 等待响应\n\n"
+                f"### 预期结果\n"
+                f"指令返回 `OK` 或匹配期望响应\n\n"
+                f"### 实际结果\n```\n{actual}\n```\n"
+                f"**失败原因:** {reason}\n\n"
+                f"### 完整执行日志\n```\n{log_text}\n```\n"
+            )
             did = session.defect_agent.store.create_defect(title=title.strip(), description=desc)
             if did:
                 return f"### ✅ 已创建缺陷 #{did}「{title}」"
             return "### ❌ 创建失败"
 
-        create_manual_defect_btn.click(create_manual_defect, [manual_defect_title, manual_defect_log],
-                                       [manual_defect_status])
+        create_manual_btn.click(create_manual_defect,
+                                [manual_title, manual_model, manual_at_cmd, manual_duration,
+                                 manual_port_info, manual_actual, manual_reason, manual_full_log],
+                                [manual_status])
 
         # 提交灵畿
         fetch_projects_btn.click(fetch_projects_for_lingji_fn, None,
