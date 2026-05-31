@@ -1304,7 +1304,6 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
             """多维筛选缺陷表格，返回 (table_data, status_text)"""
             date_start = _parse_date(ds)
             date_end = _parse_date(de)
-            # 注：faceted_query 内部会自动给 date_end 加 23:59:59，这里传纯日期即可
 
             if not any([models, versions, titles, date_start, date_end]):
                 # 无筛选条件，显示全部
