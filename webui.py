@@ -1025,7 +1025,6 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                         with gr.Row():
                             loop_count = gr.Number(label="执行轮次", value=1, precision=0, minimum=1, scale=1)
                             loop_delay = gr.Number(label="轮次间隔(s)", value=0, precision=0, minimum=0, scale=1)
-                            save_loop_btn = gr.Button("💾", scale=1)
                         gr.Markdown("---")
                         gr.Markdown("### 可选用例集（勾选即保存）")
                         set_checkboxes = gr.CheckboxGroup(label="勾选即加入方案", choices=[], interactive=True)
@@ -1106,18 +1105,6 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
 
                 new_plan_btn.click(create_plan, [new_plan_name], [plan_radio, new_plan_name, plan_status])
 
-                def save_loop_settings(plan_name, lc, ld):
-                    if not plan_name:
-                        return "### ❌ 请先选择方案"
-                    plan = load_plan(plan_name)
-                    if not plan:
-                        return "### ❌ 方案不存在"
-                    save_plan(plan_name, plan.get('test_set_names', []), loop_count=int(lc) if lc else 1,
-                              global_delay=int(ld) if ld else None)
-                    return f"### ✅ 轮次={int(lc)}, 间隔={int(ld)}s"
-
-                save_loop_btn.click(save_loop_settings, [plan_radio, loop_count, loop_delay], [plan_status])
-
                 def do_delete_plan(plan_name):
                     if not plan_name:
                         return refresh_plan_radio(), gr.CheckboxGroup(choices=[]), [], "", "### ❌ 请选择方案", 1, 0
@@ -1139,6 +1126,17 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
 
                 set_checkboxes.change(on_set_check, [plan_radio, set_checkboxes],
                                       [plan_case_table, plan_exec_status, plan_set_status])
+
+                def auto_save_loop(plan_name, lc, ld):
+                    if not plan_name: return ""
+                    plan = load_plan(plan_name)
+                    if not plan: return ""
+                    save_plan(plan_name, plan.get('test_set_names', []), loop_count=int(lc) if lc else 1,
+                              global_delay=int(ld) if ld is not None else 0)
+                    return f"### ✅ 轮次={int(lc or 1)}, 间隔={int(ld or 0)}s"
+
+                loop_count.change(auto_save_loop, [plan_radio, loop_count, loop_delay], [plan_status])
+                loop_delay.change(auto_save_loop, [plan_radio, loop_count, loop_delay], [plan_status])
 
                 def exec_plan(plan_name, table_data, lc, ld):
                     """执行方案：支持多轮循环"""
