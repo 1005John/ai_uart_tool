@@ -1469,6 +1469,13 @@ if __name__ == "__main__":
         host = "127.0.0.1"
     print(f"\n🌐 http://localhost:7860  (本机: http://{host}:7860)\n")
     ui.launch(server_name="0.0.0.0", server_port=7860, head="""<style>
-html, body { overflow: hidden; height: 100vh; }
-.gradio-container { max-height: 100vh; overflow-y: auto; }
-</style>""")
+html,body{overflow:hidden!important;height:100vh!important;position:fixed;width:100%}
+.gradio-container{height:100vh!important;overflow-y:auto!important}
+</style><script>
+window.addEventListener('load',function(){
+  var s=document.querySelector('.gradio-container');
+  if(s){s._scrollTop=s.scrollTop;setInterval(function(){if(s.scrollTop!==s._scrollTop){s.scrollTop=s._scrollTop}},50)}
+  Element.prototype._scrollIntoView=Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView=function(){};
+})
+</script>""")
