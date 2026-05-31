@@ -1021,6 +1021,10 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                         new_plan_name = gr.Textbox(label="新方案名称", placeholder="输入名称")
                         plan_radio = gr.Radio(label="选择方案", choices=[], interactive=True)
                         plan_status = gr.Markdown("")
+                        with gr.Row():
+                            loop_count = gr.Number(label="执行轮次", value=1, precision=0, minimum=1, scale=1)
+                            loop_delay = gr.Number(label="轮次间隔(s)", value=0, precision=0, minimum=0, scale=1)
+                            save_loop_btn = gr.Button("💾", scale=1)
                         gr.Markdown("---")
                         gr.Markdown("### 可选用例集（勾选即保存）")
                         set_checkboxes = gr.CheckboxGroup(label="勾选即加入方案", choices=[], interactive=True)
@@ -1073,21 +1077,23 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
 
                 def on_plan_select(plan_name):
                     if not plan_name:
-                        return refresh_plan_radio(), "", gr.CheckboxGroup(choices=[]), [], ""
+                        return refresh_plan_radio(), "", gr.CheckboxGroup(choices=[]), [], "", 1, 0
                     plan = load_plan(plan_name)
                     all_sets = sorted(s.rstrip('_') for s in list_test_sets())
                     selected_sets = plan.get('test_set_names', [])
                     case_rows, msg = load_plan_cases(plan_name)
+                    lc = plan.get('loop_count', 1) if plan else 1
+                    ld = plan.get('global_delay', 0) if plan else 0
                     return (refresh_plan_radio(),
                             f"### ✅ 方案「{plan_name}」",
                             gr.CheckboxGroup(choices=[(s, s) for s in all_sets], value=selected_sets),
-                            case_rows, msg)
+                            case_rows, msg, lc, ld)
 
                 plan_radio.change(on_plan_select, [plan_radio],
-                                  [plan_radio, plan_status, set_checkboxes, plan_case_table, plan_exec_status])
+                                  [plan_radio, plan_status, set_checkboxes, plan_case_table, plan_exec_status, loop_count, loop_delay])
 
                 refresh_plan_btn.click(on_plan_select, [plan_radio],
-                                       [plan_radio, plan_status, set_checkboxes, plan_case_table, plan_exec_status])
+                                       [plan_radio, plan_status, set_checkboxes, plan_case_table, plan_exec_status, loop_count, loop_delay])
 
                 def create_plan(name):
                     if not name or not name.strip():
@@ -1100,14 +1106,26 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
 
                 new_plan_btn.click(create_plan, [new_plan_name], [plan_radio, new_plan_name, plan_status])
 
+                def save_loop_settings(plan_name, lc, ld):
+                    if not plan_name:
+                        return "### ❌ 请先选择方案"
+                    plan = load_plan(plan_name)
+                    if not plan:
+                        return "### ❌ 方案不存在"
+                    save_plan(plan_name, plan.get('test_set_names', []), loop_count=int(lc) if lc else 1,
+                              global_delay=int(ld) if ld else None)
+                    return f"### ✅ 轮次={int(lc)}, 间隔={int(ld)}s"
+
+                save_loop_btn.click(save_loop_settings, [plan_radio, loop_count, loop_delay], [plan_status])
+
                 def do_delete_plan(plan_name):
                     if not plan_name:
-                        return refresh_plan_radio(), gr.CheckboxGroup(choices=[]), [], "", "### ❌ 请选择方案"
+                        return refresh_plan_radio(), gr.CheckboxGroup(choices=[]), [], "", "### ❌ 请选择方案", 1, 0
                     delete_plan(plan_name)
-                    return refresh_plan_radio(), gr.CheckboxGroup(choices=[]), [], "", f"### ✅ 已删除「{plan_name}」"
+                    return refresh_plan_radio(), gr.CheckboxGroup(choices=[]), [], "", f"### ✅ 已删除「{plan_name}」", 1, 0
 
                 del_plan_btn.click(do_delete_plan, [plan_radio],
-                                   [plan_radio, set_checkboxes, plan_case_table, plan_status, plan_exec_status])
+                                   [plan_radio, set_checkboxes, plan_case_table, plan_status, plan_exec_status, loop_count, loop_delay])
 
                 def on_set_check(plan_name, checked_sets):
                     if not plan_name:
@@ -1117,26 +1135,22 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                     save_plan(plan_name, checked, loop_count=plan.get('loop_count', 1) if plan else 1,
                               global_delay=plan.get('global_delay') if plan else None)
                     case_rows, msg = load_plan_cases(plan_name)
-                    return case_rows, msg, f"### ✅ 已保存，{len(checked)} 个用例集"
+                    return case_rows, msg, f"### ✅ {len(checked)} 个用例集"
 
                 set_checkboxes.change(on_set_check, [plan_radio, set_checkboxes],
                                       [plan_case_table, plan_exec_status, plan_set_status])
 
-                def exec_plan(plan_name, table_data):
-                    """执行方案：读取表格勾选行，实时输出 AT 指令日志"""
+                def exec_plan(plan_name, table_data, lc, ld):
+                    """执行方案：支持多轮循环"""
                     empty = ("### ❌ 请先选择方案", "")
-                    if not plan_name:
-                        yield empty; return
-                    if not serial.is_connected():
-                        yield ("### ❌ 请先连接串口", ""); return
+                    if not plan_name: yield empty; return
+                    if not serial.is_connected(): yield ("### ❌ 请先连接串口", ""); return
                     raw_cases, err = merge_plan_to_exec_list(plan_name)
-                    if err:
-                        yield (f"### ❌ {err}", ""); return
-                    if not raw_cases:
-                        yield ("### ❌ 方案无用例", ""); return
+                    if err: yield (f"### ❌ {err}", ""); return
+                    if not raw_cases: yield ("### ❌ 方案无用例", ""); return
 
                     from models.schemas import TestCase as TC
-                    import pandas as pd
+                    import pandas as pd, time
                     if isinstance(table_data, pd.DataFrame):
                         rows = table_data.values.tolist()
                     elif table_data and hasattr(table_data, '__iter__'):
@@ -1144,30 +1158,28 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                     else:
                         rows = []
 
-                    all_cases = []
-                    checked_indices = set()
+                    all_cases, checked_indices = [], set()
                     idx = 0
-                    for i, r in enumerate(rows):
+                    for r in rows:
                         if str(r[1]).strip():
-                            tc = TC(
-                                excel_file='', sheet_name=str(r[3])[:45] if len(r) > 3 else '',
-                                row_id=0, test_group=str(r[1]),
-                                case_name=str(r[2]) if len(r) > 2 else '',
-                                params={'send_data': str(r[3]) if len(r) > 3 else ''},
-                                expected_results=['OK'],
-                                timeout=int(r[4]) if len(r) > 4 and str(r[4]).strip() else 10,
-                                delay_after=int(r[5]) if len(r) > 5 and str(r[5]).strip() else 0,
-                            )
+                            tc = TC(excel_file='', sheet_name=str(r[3])[:45] if len(r) > 3 else '',
+                                    row_id=0, test_group=str(r[1]), case_name=str(r[2]) if len(r) > 2 else '',
+                                    params={'send_data': str(r[3]) if len(r) > 3 else ''},
+                                    expected_results=['OK'], timeout=int(r[4]) if len(r) > 4 and str(r[4]).strip() else 10,
+                                    delay_after=int(r[5]) if len(r) > 5 and str(r[5]).strip() else 0)
                             all_cases.append((str(r[1]), tc))
                             if r[0]: checked_indices.add(idx)
                             idx += 1
 
                     cases = [(sn, tc) for i, (sn, tc) in enumerate(all_cases) if i in checked_indices] if checked_indices else all_cases
-                    if not cases:
-                        yield ("### ❌ 未选中任何用例", ""); return
+                    if not cases: yield ("### ❌ 未选中任何用例", ""); return
 
-                    log_lines = [f"═══ 执行方案: {plan_name} ═══", f"串口: {serial.port} @ {serial.baudrate}", f"用例数: {len(cases)}/{len(all_cases)}\n"]
-                    yield (f"### 🚀 执行「{plan_name}」{len(cases)}/{len(all_cases)} 条\n", "\n".join(log_lines))
+                    loops = int(lc) if lc else 1
+                    loop_delay_s = int(ld) if ld else 0
+
+                    log_lines = [f"═══ 执行方案: {plan_name} ═══", f"串口: {serial.port} @ {serial.baudrate}",
+                                 f"用例: {len(cases)}/{len(all_cases)} | 轮次: {loops} | 间隔: {loop_delay_s}s\n"]
+                    yield (f"### 🚀 {plan_name} {len(cases)}条 × {loops}轮\n", "\n".join(log_lines))
 
                     executor = session.test_agent.executor
                     executor.serial = serial
@@ -1176,59 +1188,61 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                     sname = f"{plan_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
                     db_sid = db_create_session(name=sname, module='plan', port=serial.port,
                         baudrate=serial.baudrate, model='', case_level='P0')
-                    passed, failed = 0, 0
-                    results = []
-                    for i, (sn, case) in enumerate(cases, 1):
-                        at_cmd = case.params.get('send_data', '') if hasattr(case, 'params') else ''
-                        log_lines.append(f"\n[{i}/{len(cases)}] [{sn}] {case.case_name}")
-                        log_lines.append(f">>> {at_cmd}")
-                        status = f"🔄 [{i}/{len(cases)}] [{sn}] {case.case_name} ..."
-                        yield (status, "\n".join(log_lines))
-
-                        run = executor.execute_case(case, db_sid, port=serial.port, baudrate=serial.baudrate)
-                        results.append(run)
-                        actual = (run.actual or '').strip()[:150]
-                        log_lines.append(f"<<< {actual}")
-                        if run.status == 'PASS':
-                            passed += 1
-                            log_lines.append(f"结果: ✅ PASS ({run.duration_ms}ms)")
-                            status = f"  ✅ {case.case_name} ({run.duration_ms}ms)"
-                        elif run.status == 'FAIL':
-                            failed += 1
-                            log_lines.append(f"结果: ❌ FAIL ({run.duration_ms}ms) - {run.fail_reason or '未知'}")
-                            status = f"  ❌ {case.case_name} ({run.duration_ms}ms)"
-                        else:
-                            log_lines.append(f"结果: ⚠️ {run.status}")
-                            status = f"  ⚠️ {case.case_name}"
-                        yield (status, "\n".join(log_lines))
+                    total_pass, total_fail = 0, 0
+                    all_results = []
+                    for loop in range(loops):
+                        if loops > 1:
+                            log_lines.append(f"\n── 第 {loop+1}/{loops} 轮 ──")
+                            yield (f"### 🔄 第 {loop+1}/{loops} 轮\n", "\n".join(log_lines))
+                        passed, failed = 0, 0
+                        for i, (sn, case) in enumerate(cases, 1):
+                            at_cmd = case.params.get('send_data', '') if hasattr(case, 'params') else ''
+                            log_lines.append(f"[L{loop+1} #{i}] [{sn}] {case.case_name}")
+                            log_lines.append(f">>> {at_cmd}")
+                            yield (f"🔄 L{loop+1} [{i}/{len(cases)}] [{sn}] {case.case_name} ...", "\n".join(log_lines))
+                            run = executor.execute_case(case, db_sid, port=serial.port, baudrate=serial.baudrate)
+                            all_results.append(run)
+                            actual = (run.actual or '').strip()[:150]
+                            log_lines.append(f"<<< {actual}")
+                            if run.status == 'PASS':
+                                passed += 1; total_pass += 1
+                                log_lines.append(f"✅ PASS ({run.duration_ms}ms)")
+                            elif run.status == 'FAIL':
+                                failed += 1; total_fail += 1
+                                log_lines.append(f"❌ FAIL ({run.duration_ms}ms) - {run.fail_reason or '未知'}")
+                            yield (f"  {'✅' if run.status=='PASS' else '❌'} {case.case_name} ({run.duration_ms}ms)", "\n".join(log_lines))
+                        log_lines.append(f"第 {loop+1} 轮: ✅{passed} ❌{failed}")
+                        if loop < loops - 1 and loop_delay_s > 0:
+                            log_lines.append(f"等待 {loop_delay_s}s ...")
+                            yield (f"### ⏳ 等待 {loop_delay_s}s ...\n", "\n".join(log_lines))
+                            time.sleep(loop_delay_s)
 
                     update_session_stats(db_sid)
-                    summary = f"✅ {passed} | ❌ {failed} | 共 {len(cases)}"
+                    summary = f"✅ {total_pass} | ❌ {total_fail} | {len(cases)}条 × {loops}轮"
                     end_session(db_sid, summary=summary)
-                    _save_exec_result(results, summary, plan_name)
-                    log_lines.append(f"\n═══ 执行完成: {summary} ═══")
+                    _save_exec_result(all_results, summary, plan_name)
+                    log_lines.append(f"\n═══ 完成: {summary} ═══")
                     yield (f"\n### 📊 {summary}", "\n".join(log_lines))
-                    if failed > 0:
+                    if total_fail > 0:
                         yield (f"\n💡 切换到「🐛 缺陷管理」", "\n".join(log_lines))
                         try:
                             ok = 0
-                            for r in results:
+                            for r in all_results:
                                 if r.status != 'FAIL': continue
                                 desc = (f"## 缺陷报告\n\n### 测试环境\n- **方案:** {plan_name}\n"
                                     f"- **串口:** {serial.port} @ {serial.baudrate}\n"
-                                    f"- **测试指令:** `{r.at_command or ''}`\n"
-                                    f"- **指令耗时:** {r.duration_ms}ms\n\n"
+                                    f"- **测试指令:** `{r.at_command or ''}`\n- **指令耗时:** {r.duration_ms}ms\n\n"
                                     f"### 实际结果\n```\n{(r.actual or '').strip()[:200]}\n```\n"
                                     f"**失败原因:** {r.fail_reason or '未知'}\n")
                                 res = session.defect_agent.create_local(r, description=desc)
                                 if res['ok']: ok += 1
                             if ok > 0:
                                 log_lines.append(f"已自动生成 {ok} 条本地缺陷")
-                                yield (f"✅ 已自动生成 {ok} 条本地缺陷", "\n".join(log_lines))
+                                yield (f"✅ {ok} 条本地缺陷", "\n".join(log_lines))
                         except Exception as e:
                             yield (f"⚠️ 缺陷生成失败: {e}", "\n".join(log_lines))
 
-                exec_plan_btn.click(exec_plan, [plan_radio, plan_case_table], [plan_exec_status, plan_exec_log])
+                exec_plan_btn.click(exec_plan, [plan_radio, plan_case_table, loop_count, loop_delay], [plan_exec_status, plan_exec_log])
 
                 # 初始加载
                 _init_plans = sorted(list_plans())
