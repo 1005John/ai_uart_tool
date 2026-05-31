@@ -1442,21 +1442,12 @@ if __name__ == "__main__":
     print(f"\n🌐 http://localhost:7860  (本机: http://{host}:7860)\n")
     ui.launch(server_name="0.0.0.0", server_port=7860, head="""<style>
 #serial-bar { position: sticky; top: 0; z-index: 100; background: var(--background-fill-primary, #fff); padding: 6px 0; border-bottom: 1px solid var(--border-color-primary, #ddd); margin-bottom: 4px; }
-html { scroll-behavior: auto; }
+html { scroll-behavior: smooth; overscroll-behavior: auto; }
+body { overflow-y: auto !important; }
 .gradio-container { overflow: visible; max-width: 100% !important; }
 .gradio-container .contain { max-width: 100% !important; padding: 0 8px !important; }
-/* 强制全宽 */
 .app, .main, .wrap, .tabitem, .tabs > div { max-width: 100% !important; }
-</style>
-<script>
-(function(){
-  var scrollY = 0;
-  window.addEventListener('scroll', function(){ window.scrollTo(0, scrollY); }, {passive: false});
-  setInterval(function(){ scrollY = window.scrollY; }, 100);
-  document.addEventListener('focusin', function(e){
-    if (e.target.tagName === 'INPUT' && e.target.closest('table')) {
-      window.scrollTo(0, scrollY);
-    }
-  });
-})();
-</script>""")
+/* Dataframe 不拦截滚轮 */
+[data-testid="dataframe"] { overscroll-behavior: contain; }
+table { overscroll-behavior: auto; }
+</style>""")
