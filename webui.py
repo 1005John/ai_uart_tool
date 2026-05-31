@@ -1265,7 +1265,8 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
             date_end = gr.DateTime(label="截止日期", include_time=False, value=None, scale=1)
             model_filter = gr.Dropdown(label="🔧 型号", choices=[], multiselect=True, scale=1)
             ver_filter = gr.Dropdown(label="📀 版本", choices=[], multiselect=True, scale=1)
-            clear_filters_btn = gr.Button("🗑️ 清空筛选", scale=1)
+            refresh_btn = gr.Button("🔍 筛选", scale=1)
+            clear_filters_btn = gr.Button("🗑️ 清空", scale=1)
 
         # ── 缺陷列表 + 详情 ──
         with gr.Row():
@@ -1293,9 +1294,11 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
 
         # ── 辅助函数 ──
         def _parse_date(dt_val):
-            """DateTime 组件可能返回 ISO 字符串或 None"""
+            """DateTime 组件返回 ISO 格式字符串如 '2026-05-31 00:00:00' 或 datetime"""
             if not dt_val: return None
-            return str(dt_val)[:10]  # 取 YYYY-MM-DD
+            s = str(dt_val).strip()
+            # 可能格式: '2026-05-31 00:00:00' 或 '2026-05-31T00:00:00'
+            return s[:10] if len(s) >= 10 else s
 
         def filter_defect_table(models, versions, titles, ds, de):
             """多维筛选缺陷表格，返回 (table_data, status_text)"""
@@ -1359,11 +1362,9 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
         def refresh_with_filters(ds, de, models, versions):
             return filter_defect_table(models, versions, None, ds, de)
 
-        # 日期/筛选变化自动刷新
-        date_start.change(refresh_with_filters, [date_start, date_end, model_filter, ver_filter],
+        # 筛选按钮和下拉自动刷新
+        refresh_btn.click(refresh_with_filters, [date_start, date_end, model_filter, ver_filter],
                           [defect_table, defect_status])
-        date_end.change(refresh_with_filters, [date_start, date_end, model_filter, ver_filter],
-                        [defect_table, defect_status])
         model_filter.change(refresh_with_filters, [date_start, date_end, model_filter, ver_filter],
                             [defect_table, defect_status])
         ver_filter.change(refresh_with_filters, [date_start, date_end, model_filter, ver_filter],
