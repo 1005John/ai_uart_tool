@@ -1059,86 +1059,56 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
 
                     with gr.Column(scale=2, min_width=380):
                         gr.Markdown("### 方案全部用例（只读）")
-                        plan_case_html = gr.HTML('<div style="color:#888;padding:20px;font-size:16px">请选择方案</div>')
-                        case_select = gr.CheckboxGroup(label="勾选要执行的用例（留空=全部执行）", choices=[], interactive=True)
-                        exec_plan_btn = gr.Button("🚀 执行方案", variant="primary")
+                        plan_case_table = gr.Dataframe(
+                            headers=["☑", "用例集", "用例名称", "AT指令", "超时", "延迟"],
+                            datatype=["bool", "str", "str", "str", "str", "str"],
+                            column_count=6, interactive=True, row_count=20,
+                            label="勾选→执行",
+                        )
+                        exec_plan_btn = gr.Button("🚀 执行勾选用例", variant="primary")
                         plan_exec_status = gr.Markdown("")
 
                 # ── 方案管理事件 ──
-                def _merge_plan_cases(plan_name):
-                    """返回 (html, case_labels) 元组"""
-                    empty = '<div style="color:#888;padding:20px;font-size:16px">请选择方案</div>'
+                def load_plan_cases(plan_name):
+                    """加载方案用例到表格"""
                     if not plan_name:
-                        return empty, []
+                        return [], ""
                     plan = load_plan(plan_name)
                     if not plan:
-                        return f'<div style="color:red;padding:10px">方案「{plan_name}」不存在</div>', []
+                        return [], f"### ❌ 方案「{plan_name}」不存在"
                     set_names = plan.get('test_set_names', [])
-                    if not set_names:
-                        return f'<div style="padding:16px;background:#fff3cd;border-radius:4px"><b>{plan_name}</b> 暂无关联用例集，请在左侧勾选用例集后保存</div>', []
-                    rows_html = ""
-                    total = 0
-                    labels = []
+                    rows = []
                     for sn in set_names:
                         ts = load_test_set(sn)
                         if not ts:
                             continue
-                        for i, c in enumerate(ts.get('cases', [])):
-                            name = c.get('case_name', '')[:30]
-                            cmd = (c.get('at_cmd', '') or c.get('module', ''))[:45]
-                            to = c.get('timeout', 10)
-                            dl = c.get('delay', '') if c.get('delay') is not None else ''
-                            label = f"[{sn}] {name}"
-                            labels.append(label)
-                            rows_html += f'''<tr>
-                                <td style="padding:6px 8px">{sn}</td>
-                                <td style="padding:6px 8px">{name}</td>
-                                <td style="padding:6px 8px;font-family:monospace;font-size:13px"><code>{cmd}</code></td>
-                                <td style="text-align:center;width:50px;padding:6px 4px">{to}s</td>
-                                <td style="text-align:center;width:55px;padding:6px 4px">{dl}ms</td>
-                            </tr>'''
-                            total += 1
-                    html = f'''<div>
-                        <div style="margin-bottom:8px;font-weight:600;font-size:15px">
-                            📋 {plan_name} · {total} 条（{len(set_names)} 个用例集）
-                        </div>
-                        <table style="width:100%;border-collapse:collapse;font-size:14px">
-                            <thead>
-                                <tr style="border-bottom:2px solid var(--border-color-primary, #ccc)">
-                                    <th style="padding:6px;text-align:left">用例集</th>
-                                    <th style="padding:6px;text-align:left">用例名称</th>
-                                    <th style="padding:6px;text-align:left">AT指令</th>
-                                    <th style="padding:6px;width:50px">超时</th>
-                                    <th style="padding:6px;width:55px">延迟</th>
-                                </tr>
-                            </thead>
-                            <tbody>{rows_html}</tbody>
-                        </table>
-                    </div>'''
-                    return html, labels
-
-                def refresh_plan_radio():
-                    plans = sorted(list_plans())
-                    return gr.Radio(choices=[(p, p) for p in plans])
+                        for c in ts.get('cases', []):
+                            rows.append([False, sn,
+                                         c.get('case_name', '')[:35],
+                                         (c.get('at_cmd', '') or c.get('module', ''))[:40],
+                                         str(c.get('timeout', 10)),
+                                         str(c.get('delay', '') if c.get('delay') is not None else '')])
+                    while len(rows) < 20:
+                        rows.append([False, "", "", "", "", ""])
+                    return rows, f"### 方案「{plan_name}」共 {len([r for r in rows if r[1]])} 条（{len(set_names)} 个用例集）"
 
                 def on_plan_select(plan_name):
                     if not plan_name:
-                        return refresh_plan_radio(), "", gr.CheckboxGroup(choices=[]), "", "", gr.CheckboxGroup(choices=[])
+                        return refresh_plan_radio(), "", gr.CheckboxGroup(choices=[]), [], ""
                     plan = load_plan(plan_name)
                     all_sets = sorted(s.rstrip('_') for s in list_test_sets())
                     selected_sets = plan.get('test_set_names', [])
-                    case_html, case_labels = _merge_plan_cases(plan_name)
+                    case_rows, msg = load_plan_cases(plan_name)
                     return (refresh_plan_radio(),
                             f"### ✅ 方案「{plan_name}」",
                             gr.CheckboxGroup(choices=[(s, s) for s in all_sets], value=selected_sets),
-                            case_html, case_html,
-                            gr.CheckboxGroup(choices=[(l, l) for l in case_labels], value=None))
+                            case_rows, msg)
 
                 plan_radio.change(on_plan_select, [plan_radio],
-                                  [plan_radio, plan_status, set_checkboxes, plan_case_html, plan_exec_status, case_select])
+                                  [plan_radio, plan_status, set_checkboxes, plan_case_table, plan_exec_status])
 
                 refresh_plan_btn.click(on_plan_select, [plan_radio],
-                                       [plan_radio, plan_status, set_checkboxes, plan_case_html, plan_exec_status, case_select])
+                                       [plan_radio, plan_status, set_checkboxes, plan_case_table, plan_exec_status])
 
                 def create_plan(name):
                     if not name or not name.strip():
@@ -1153,12 +1123,12 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
 
                 def do_delete_plan(plan_name):
                     if not plan_name:
-                        return refresh_plan_radio(), gr.CheckboxGroup(choices=[]), "", "", "### ❌ 请选择方案", gr.CheckboxGroup(choices=[])
+                        return refresh_plan_radio(), gr.CheckboxGroup(choices=[]), [], "", "### ❌ 请选择方案"
                     delete_plan(plan_name)
-                    return refresh_plan_radio(), gr.CheckboxGroup(choices=[]), "", "", f"### ✅ 已删除「{plan_name}」", gr.CheckboxGroup(choices=[])
+                    return refresh_plan_radio(), gr.CheckboxGroup(choices=[]), [], "", f"### ✅ 已删除「{plan_name}」"
 
                 del_plan_btn.click(do_delete_plan, [plan_radio],
-                                   [plan_radio, set_checkboxes, plan_case_html, plan_status, plan_exec_status, case_select])
+                                   [plan_radio, set_checkboxes, plan_case_table, plan_status, plan_exec_status])
 
                 def on_set_check(plan_name, checked_sets):
                     if not plan_name:
@@ -1167,14 +1137,14 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                     checked = list(checked_sets) if checked_sets else []
                     save_plan(plan_name, checked, loop_count=plan.get('loop_count', 1) if plan else 1,
                               global_delay=plan.get('global_delay') if plan else None)
-                    case_html, case_labels = _merge_plan_cases(plan_name)
-                    return case_html, case_html, f"### ✅ 已保存，{len(checked)} 个用例集", gr.CheckboxGroup(choices=[(l, l) for l in case_labels])
+                    case_rows, msg = load_plan_cases(plan_name)
+                    return case_rows, msg, f"### ✅ 已保存，{len(checked)} 个用例集"
 
                 save_sets_btn.click(on_set_check, [plan_radio, set_checkboxes],
-                                    [plan_case_html, plan_exec_status, plan_set_status, case_select])
+                                    [plan_case_table, plan_exec_status, plan_set_status])
 
-                def exec_plan(plan_name, selected_labels):
-                    """执行方案：逐条发送 AT 指令，可选择性执行"""
+                def exec_plan(plan_name, table_data):
+                    """执行方案：读取表格勾选行"""
                     if not plan_name:
                         yield "### ❌ 请先选择方案"
                         return
@@ -1189,26 +1159,36 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                         yield "### ❌ 方案无用例"
                         return
 
-                    # 转为 TestCase 对象，带所属用例集信息
                     from models.schemas import TestCase as TC
-                    all_cases = []
-                    for d in raw_cases:
-                        tc = TC(
-                            excel_file='', sheet_name=d.get('module', d.get('at_cmd', '')),
-                            row_id=0, test_group=d.get('set_name', ''),
-                            case_name=d.get('case_name', ''),
-                            params={'send_data': d.get('at_cmd', '')},
-                            expected_results=[d.get('expected', 'OK')],
-                            timeout=d.get('timeout', 10),
-                            delay_after=d.get('delay') or 0,
-                        )
-                        all_cases.append((d.get('set_name', ''), tc))
+                    import pandas as pd
+                    if isinstance(table_data, pd.DataFrame):
+                        rows = table_data.values.tolist()
+                    elif table_data and hasattr(table_data, '__iter__'):
+                        rows = [list(r) for r in table_data]
+                    else:
+                        rows = []
 
-                    # 如果用户勾选了用例，只执行勾选的
-                    if selected_labels:
-                        selected_set = set(selected_labels)
-                        cases = [(sn, tc) for sn, tc in all_cases
-                                 if f"[{sn}] {tc.case_name}" in selected_set]
+                    all_cases = []
+                    checked_indices = set()
+                    idx = 0
+                    for i, r in enumerate(rows):
+                        if str(r[1]).strip():  # has set name → real case
+                            tc = TC(
+                                excel_file='', sheet_name=str(r[3])[:45] if len(r) > 3 else '',
+                                row_id=0, test_group=str(r[1]),
+                                case_name=str(r[2]) if len(r) > 2 else '',
+                                params={'send_data': str(r[3]) if len(r) > 3 else ''},
+                                expected_results=['OK'],
+                                timeout=int(r[4]) if len(r) > 4 and str(r[4]).strip() else 10,
+                                delay_after=int(r[5]) if len(r) > 5 and str(r[5]).strip() else 0,
+                            )
+                            all_cases.append((str(r[1]), tc))
+                            if r[0]:  # checked
+                                checked_indices.add(idx)
+                            idx += 1
+
+                    if checked_indices:
+                        cases = [(sn, tc) for i, (sn, tc) in enumerate(all_cases) if i in checked_indices]
                     else:
                         cases = all_cases
 
@@ -1217,8 +1197,6 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                         return
 
                     yield f"### 🚀 执行「{plan_name}」{len(cases)}/{len(all_cases)} 条\n"
-
-                    yield f"### 🚀 执行「{plan_name}」共 {len(cases)} 条\n"
                     executor = session.test_agent.executor
                     executor.serial = serial
                     from models.database import create_session as db_create_session, end_session, update_session_stats
@@ -1258,12 +1236,10 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                                 actual = (r.actual or '').strip()[:200]
                                 desc = (
                                     f"## 缺陷报告\n\n"
-                                    f"### 测试环境\n"
-                                    f"- **方案:** {plan_name}\n"
+                                    f"### 测试环境\n- **方案:** {plan_name}\n"
                                     f"- **串口:** {serial.port} @ {serial.baudrate}\n"
                                     f"- **测试指令:** `{at_cmd}`\n"
                                     f"- **指令耗时:** {r.duration_ms}ms\n\n"
-                                    f"### 预期结果\n指令返回 `OK` 或匹配期望响应\n\n"
                                     f"### 实际结果\n```\n{actual}\n```\n"
                                     f"**失败原因:** {r.fail_reason or '未知'}\n"
                                 )
@@ -1275,7 +1251,13 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                         except Exception as e:
                             yield f"⚠️ 缺陷生成失败: {e}"
 
-                exec_plan_btn.click(exec_plan, [plan_radio, case_select], [plan_exec_status])
+                exec_plan_btn.click(exec_plan, [plan_radio, plan_case_table], [plan_exec_status])
+
+                # 初始加载
+                _init_plans = sorted(list_plans())
+                plan_radio.choices = [(p, p) for p in _init_plans]
+                _init_all_sets = sorted(s.rstrip('_') for s in list_test_sets())
+                set_checkboxes.choices = [(s, s) for s in _init_all_sets]
 
                 # 初始加载
                 _init_plans = sorted(list_plans())
