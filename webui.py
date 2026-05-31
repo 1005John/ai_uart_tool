@@ -834,17 +834,14 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                 with gr.Row():
                     with gr.Column(scale=1, min_width=200):
                         gr.Markdown("### 用例集列表")
-                        set_radio = gr.Radio(label="选择用例集", choices=[], interactive=True)
                         with gr.Row():
-                            new_set_name = gr.Textbox(label="新建", placeholder="输入名称", scale=2)
-                            new_set_btn = gr.Button("➕", scale=1)
-                        with gr.Row():
-                            rename_set_name = gr.Textbox(label="重命名", placeholder="新名称", scale=2)
-                            rename_set_btn = gr.Button("✏️", scale=1)
-                        del_set_btn = gr.Button("🗑️ 删除选中", scale=1)
-                        with gr.Row():
-                            copy_set_name = gr.Textbox(label="复制为", placeholder="新用例集名称", scale=2)
+                            new_set_btn = gr.Button("➕ 新建", scale=1)
                             copy_set_btn = gr.Button("📋 复制", scale=1)
+                            del_set_btn = gr.Button("🗑️ 删除", scale=1)
+                        with gr.Row():
+                            new_set_name = gr.Textbox(label="新建名称", placeholder="输入名称", scale=1)
+                            copy_set_name = gr.Textbox(label="复制为", placeholder="新用例集名称", scale=1)
+                        set_radio = gr.Radio(label="选择用例集", choices=[], interactive=True)
                         set_lib_status = gr.Markdown("")
 
                     with gr.Column(scale=2, min_width=350):
@@ -918,32 +915,6 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                     return refresh_set_radio(), [], f"### ✅ 已删除「{set_name}」", None
 
                 del_set_btn.click(delete_set, [set_radio], [set_radio, set_case_table, set_lib_status, selected_row])
-
-                def rename_set(old_name, new_name):
-                    if not old_name:
-                        return refresh_set_radio(), "", "### ❌ 请先选择用例集"
-                    if not new_name or not new_name.strip():
-                        return refresh_set_radio(), "", "### ❌ 请输入新名称"
-                    new_name = new_name.strip()
-                    if new_name == old_name:
-                        return refresh_set_radio(), "", "### ⏭️ 名称未变"
-                    if new_name in _clean_set_names():
-                        return refresh_set_radio(), "", f"### ⏭️ 「{new_name}」已存在"
-                    ts = load_test_set(old_name)
-                    if ts:
-                        save_test_set(new_name, ts.get('cases', []))
-                        delete_test_set(old_name)
-                    for pname in list_plans():
-                        plan = load_plan(pname)
-                        if plan and old_name in (plan.get('test_set_names') or []):
-                            sn = plan['test_set_names']
-                            sn[sn.index(old_name)] = new_name
-                            save_plan(pname, sn, loop_count=plan.get('loop_count', 1),
-                                      global_delay=plan.get('global_delay'))
-                    return refresh_set_radio(), "", f"### ✅ 已重命名「{old_name}」→「{new_name}」"
-
-                rename_set_btn.click(rename_set, [set_radio, rename_set_name],
-                                     [set_radio, rename_set_name, set_lib_status])
 
                 def copy_set(old_name, new_name):
                     if not old_name:
