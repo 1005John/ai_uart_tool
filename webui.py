@@ -1069,6 +1069,10 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                         plan_exec_status = gr.Markdown("")
 
                 # ── 方案管理事件 ──
+                def refresh_plan_radio():
+                    plans = sorted(list_plans())
+                    return gr.Radio(choices=[(p, p) for p in plans])
+
                 def load_plan_cases(plan_name):
                     """加载方案用例到表格"""
                     if not plan_name:
