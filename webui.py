@@ -813,16 +813,17 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True) as ui:
     gr.Markdown(f"### 🔧 AI Native UART Tool")
 
     # ── 测试方案与执行标签页 ──
+    # ── 串口控制（固定在页面顶部）──
+    with gr.Row(elem_id="serial-bar"):
+        port_dd = gr.Dropdown(label="端口", choices=[], scale=3)
+        baud_in = gr.Number(label="波特率", value=115200, precision=0, scale=1)
+        status_box = gr.Textbox(label="状态", value="未连接", scale=2)
+        gr.Button("🔍 扫描", scale=1).click(scan_fn, None, port_dd)
+        gr.Button("✅ 连接", scale=1).click(connect_fn, [port_dd, baud_in], status_box)
+        gr.Button("❌ 断开", scale=1).click(disconnect_fn, None, status_box)
+
     # ── 测试方案与执行标签页 ──
     with gr.Tab("📋 测试方案与执行") as plan_tab:
-        # ── 串口控制 ──
-        with gr.Row():
-            port_dd = gr.Dropdown(label="端口", choices=[], scale=3)
-            baud_in = gr.Number(label="波特率", value=115200, precision=0, scale=1)
-            status_box = gr.Textbox(label="状态", value="未连接", scale=2)
-            gr.Button("🔍 扫描", scale=1).click(scan_fn, None, port_dd)
-            gr.Button("✅ 连接", scale=1).click(connect_fn, [port_dd, baud_in], status_box)
-            gr.Button("❌ 断开", scale=1).click(disconnect_fn, None, status_box)
 
         # ══════════════════════════════════
         # 子标签：用例集库 | 方案管理
@@ -1468,19 +1469,19 @@ if __name__ == "__main__":
         host = "127.0.0.1"
     print(f"\n🌐 http://localhost:7860  (本机: http://{host}:7860)\n")
     ui.launch(server_name="0.0.0.0", server_port=7860, head="""<style>
-html,body{overflow:hidden!important;height:100vh!important;margin:0;padding:0}
-.gradio-container{height:100vh!important;overflow:hidden!important;display:flex;flex-direction:column}
-.gradio-container>.main{flex:1;overflow:hidden!important}
-/* 只有 Dataframe 可以有滚动条 */
-table{overflow:auto!important}
-</style><script>
-window.addEventListener('load',function(){
-  Element.prototype._scrollIntoView=Element.prototype.scrollIntoView;
-  Element.prototype.scrollIntoView=function(){};
-  setTimeout(function(){
-    document.querySelectorAll('.gradio-container [style*="overflow"]').forEach(function(el){
-      if(!el.closest('table')&&!el.closest('[data-testid="dataframe"]'))el.style.overflow='hidden';
-    });
-  },500);
-})
+#serial-bar { position: sticky; top: 0; z-index: 100; background: var(--background-fill-primary, #fff); padding: 6px 0; border-bottom: 1px solid var(--border-color-primary, #ddd); margin-bottom: 4px; }
+html { scroll-behavior: auto; }
+.gradio-container { overflow: visible; }
+</style>
+<script>
+(function(){
+  var scrollY = 0;
+  window.addEventListener('scroll', function(){ window.scrollTo(0, scrollY); }, {passive: false});
+  setInterval(function(){ scrollY = window.scrollY; }, 100);
+  document.addEventListener('focusin', function(e){
+    if (e.target.tagName === 'INPUT' && e.target.closest('table')) {
+      window.scrollTo(0, scrollY);
+    }
+  });
+})();
 </script>""")
