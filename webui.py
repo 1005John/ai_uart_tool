@@ -1015,9 +1015,10 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                     # 左：方案管理
                     with gr.Column(scale=1, min_width=200):
                         with gr.Row():
-                            new_plan_btn = gr.Button("➕ 新建方案", scale=1)
+                            new_plan_btn = gr.Button("➕ 新建", scale=1)
                             del_plan_btn = gr.Button("🗑️ 删除", scale=1)
                             refresh_plan_btn = gr.Button("🔄 刷新", scale=1)
+                            exec_plan_btn = gr.Button("🚀 执行", variant="primary", scale=1)
                         new_plan_name = gr.Textbox(label="新方案名称", placeholder="输入名称")
                         plan_radio = gr.Radio(label="选择方案", choices=[], interactive=True)
                         plan_status = gr.Markdown("")
@@ -1039,7 +1040,6 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                             column_count=6, interactive=True, row_count=15,
                             label="勾选→执行",
                         )
-                        exec_plan_btn = gr.Button("🚀 执行勾选用例", variant="primary")
                         plan_exec_status = gr.Markdown("")
 
                     # 右：执行日志
