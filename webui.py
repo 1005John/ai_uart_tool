@@ -1301,6 +1301,9 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
             """多维筛选缺陷表格，返回 (table_data, status_text)"""
             date_start = _parse_date(ds)
             date_end = _parse_date(de)
+            # 截止日期包含当天全天：YYYY-MM-DD → YYYY-MM-DD 23:59:59
+            if date_end and ' ' not in date_end:
+                date_end = date_end + " 23:59:59"
 
             if not any([models, versions, titles, date_start, date_end]):
                 # 无筛选条件，显示全部
