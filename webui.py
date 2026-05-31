@@ -1140,12 +1140,15 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
 
                 def exec_plan(plan_name, table_data, lc, ld):
                     """执行方案：支持多轮循环"""
-                    empty = ("### ❌ 请先选择方案", "")
-                    if not plan_name: yield empty; return
-                    if not serial.is_connected(): yield ("### ❌ 请先连接串口", ""); return
+                    if not plan_name:
+                        yield ("### ❌ 请先选择方案", ""); return
+                    if not serial.is_connected():
+                        yield ("### ❌ 请先连接串口", "⚠️ 未连接串口，请先在顶部连接"); return
                     raw_cases, err = merge_plan_to_exec_list(plan_name)
-                    if err: yield (f"### ❌ {err}", ""); return
-                    if not raw_cases: yield ("### ❌ 方案无用例", ""); return
+                    if err:
+                        yield (f"### ❌ {err}", f"错误: {err}"); return
+                    if not raw_cases:
+                        yield ("### ❌ 方案无用例", "方案中没有用例，请先在左侧勾选用例集"); return
 
                     from models.schemas import TestCase as TC
                     import pandas as pd, time
@@ -1170,7 +1173,7 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                             idx += 1
 
                     cases = [(sn, tc) for i, (sn, tc) in enumerate(all_cases) if i in checked_indices] if checked_indices else all_cases
-                    if not cases: yield ("### ❌ 未选中任何用例", ""); return
+                    if not cases: yield ("### ❌ 未选中任何用例", "请在用例表格中勾选要执行的用例"); return
 
                     loops = int(lc) if lc else 1
                     loop_delay_s = int(ld) if ld else 0
