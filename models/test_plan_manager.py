@@ -18,8 +18,9 @@ def _ensure_dirs():
 
 
 def _slug(name: str) -> str:
-    """中文名称转文件名"""
+    """中文名称转文件名，去除尾部下划线"""
     s = re.sub(r'[^\w\u4e00-\u9fff\- ]', '', name).strip()
+    s = s.rstrip('_')
     return s or "unnamed"
 
 
@@ -75,7 +76,7 @@ def delete_plan(name: str):
 def list_test_sets() -> list[str]:
     """列出所有历史测试集"""
     _ensure_dirs()
-    return sorted([f[:-8] for f in os.listdir(SET_DIR) if f.endswith('_set.json')])
+    return sorted([f[:-9] for f in os.listdir(SET_DIR) if f.endswith('_set.json')])
 
 
 def save_test_set(name: str, cases: list[dict]) -> str:

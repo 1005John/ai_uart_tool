@@ -9,6 +9,19 @@ from typing import Optional, Callable
 from datetime import datetime
 
 
+def _safe_decode(data: bytes, fallback: str = 'latin-1') -> str:
+    """安全解码：按 UTF-8 → GBK → fallback 顺序尝试"""
+    if not data:
+        return ''
+    for enc in ['utf-8', 'gbk', 'gb2312', fallback]:
+        try:
+            return data.decode(enc)
+        except (UnicodeDecodeError, UnicodeError):
+            continue
+    # 最后兜底
+    return data.decode('latin-1', errors='replace')
+
+
 class SerialEngine:
     """
     串口引擎
@@ -19,6 +32,7 @@ class SerialEngine:
     - 发送数据
     - 接收数据（支持超时/模式匹配/流式回调）
     - 自动重连检测
+    - 多编码支持（UTF-8/GBK/ASCII 自动回退）
     """
 
     def __init__(self):
@@ -146,7 +160,7 @@ class SerialEngine:
             time.sleep(0.05)
         data = self.ser.read(min(size, self.ser.in_waiting or 1))
         if data:
-            print(f"[Serial] <<< {data[:80].decode('utf-8', errors='replace')}")
+            print(f"[Serial] <<< {_safe_decode(data[:80])}")
         return data
 
     def read_all(self) -> bytes:
@@ -155,7 +169,7 @@ class SerialEngine:
             return b""
         data = self.ser.read(self.ser.in_waiting or 1)
         if data:
-            print(f"[Serial] <<< {data[:120].decode('utf-8', errors='replace')}")
+            print(f"[Serial] <<< {_safe_decode(data[:120])}")
         return data
 
     def send_and_wait(self, command: str, expected_patterns: list = None,
@@ -192,7 +206,7 @@ class SerialEngine:
                 data = self.ser.read(self.ser.in_waiting)
                 buffer += data
 
-            text = buffer.decode('utf-8', errors='replace')
+            text = _safe_decode(buffer)
 
             for pattern in patterns:
                 if re.search(pattern, text, re.MULTILINE):
@@ -208,7 +222,7 @@ class SerialEngine:
             time.sleep(0.01)
 
         elapsed = int((time.time() - start) * 1000)
-        text = buffer.decode('utf-8', errors='replace')
+        text = _safe_decode(buffer)
         print(f"[Serial] ⏰ 超时({timeout}s)，已接收: {text[:100]}")
         return {
             "success": False,
@@ -238,7 +252,7 @@ class SerialEngine:
                 if self.ser.in_waiting:
                     data = self.ser.read(self.ser.in_waiting)
                     self._recv_buffer += data
-                    text = data.decode('utf-8', errors='replace')
+                    text = _safe_decode(data)
                     if self._recv_callback:
                         self._recv_callback(data, text)
                 else:

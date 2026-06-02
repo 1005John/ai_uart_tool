@@ -19,6 +19,11 @@ Thumbs.db
 
 # Project specific
 data/ai_uart.db
+data/test_plans/
+data/test_sets/
+data/custom_cmds/
+data/last_exec_*.json
+defects/
 *.log
 
 # ===== 密钥安全 =====

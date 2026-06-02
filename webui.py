@@ -2,6 +2,14 @@
 """AI Native UART Tool - Web UI v2 (用例集 + 即时缺陷)"""
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# 添加 user site-packages（处理 gradio/pyserial 等不在系统路径的情况）
+_user_site = os.path.expanduser('~/.local/lib/python3.11/site-packages')
+if os.path.isdir(_user_site) and _user_site not in sys.path:
+    sys.path.insert(0, _user_site)
+# 添加系统 dist-packages（处理 pytz 等 deb 包）
+_sys_dist = '/usr/lib/python3/dist-packages'
+if os.path.isdir(_sys_dist) and _sys_dist not in sys.path:
+    sys.path.insert(1, _sys_dist)
 
 import gradio as gr
 from agents.chat_session import ChatSession
@@ -35,10 +43,10 @@ def _gen_case_row(c):
     try:
         real_cmd = session.test_agent.executor._call_command_module(c.sheet_name, c.params)
         if real_cmd:
-            cmd_preview = real_cmd[:55]
+            cmd_preview = real_cmd
     except:
         pass
-    return [False, c.case_name[:45], c.sheet_name, cmd_preview[:55]]
+    return [False, c.case_name[:60], c.sheet_name, cmd_preview[:200]]
 
 def _save_exec_result(case_runs, summary, suite_name=""):
     os.makedirs(os.path.dirname(EXEC_RESULT_PATH), exist_ok=True)
@@ -103,15 +111,96 @@ def _load_test_set(name):
 
 # ── UI 函数 ──
 
+def _probe_at_port(port_name: str, baud: int = 115200, timeout: float = 1.0) -> dict:
+    """快速探测串口：返回 {tag, model, version, port} / 非AT口返回空标签"""
+    import serial as _serial
+    import time as _time
+    empty = {"tag": "", "model": "", "version": "", "port": port_name}
+    try:
+        s = _serial.Serial(port=port_name, baudrate=baud, timeout=timeout,
+                           rtscts=False, dsrdtr=False)
+        _time.sleep(0.1)
+        s.reset_input_buffer()
+        # ① 发 AT 确认是 AT 口
+        s.write(b"AT\r\n")
+        _time.sleep(0.5)
+        raw = s.read(1024)
+        # 确认是AT口：包含OK 且 大部分是可打印ASCII（排除二进制数据误判）
+        is_at_response = False
+        if raw:
+            printable = sum(1 for b in raw if 32 <= b <= 126 or b in (9, 10, 13))
+            ratio = printable / len(raw)
+            is_at_response = b'OK' in raw and ratio > 0.7
+        if not raw or not is_at_response:
+            s.close()
+            if raw:
+                non_ascii = sum(1 for b in raw if b > 127 or b < 32)
+                if non_ascii > len(raw) * 0.3 or raw[0:1] == b'\x7e':
+                    return {**empty, "tag": "[DATA]"}
+                return {**empty, "tag": "[?]"}
+            return {**empty, "tag": "[无响应]"}
+
+        # ② 发 AT+CGMM 获取模组型号
+        s.reset_input_buffer()
+        s.write(b"AT+CGMM\r\n")
+        _time.sleep(0.4)
+        raw_mm = s.read(1024)
+
+        # ③ 发 AT+CGMR 获取版本
+        s.reset_input_buffer()
+        s.write(b"AT+CGMR\r\n")
+        _time.sleep(0.4)
+        raw_mr = s.read(1024)
+        s.close()
+
+        # 解析型号
+        model = ''
+        for buf in [raw_mm, raw]:
+            for line in buf.decode('utf-8', errors='replace').split('\r\n'):
+                line = line.strip()
+                if line and line != 'OK' and not line.startswith('AT') and not line.startswith('+CGMM'):
+                    model = line[:30]
+                    break
+            if model:
+                break
+
+        # 解析固件版本
+        version = ''
+        for buf in [raw_mr, raw]:
+            for line in buf.decode('utf-8', errors='replace').split('\r\n'):
+                line = line.strip()
+                if line and line != 'OK' and not line.startswith('AT') and not line.startswith('+CGMR'):
+                    version = line[:30]
+                    break
+            if version:
+                break
+
+        # 生成标签：模型 | 版本短号
+        if model:
+            # 短版本号：去掉模型前缀部分
+            short_ver = version.replace(model, '').strip('-') if version else ''
+            tag = f"[{model} | {short_ver}]" if short_ver else f"[{model}]"
+        elif version:
+            tag = f"[{version}]"
+        else:
+            tag = "[AT]"
+
+        return {"tag": tag, "model": model, "version": version, "port": port_name}
+    except Exception as e:
+        return {**empty, "tag": "[错误]"}
+
 def scan_fn():
+    """扫描串口并探测AT口，返回 (dropdown, status_markdown)"""
     ports = serial.list_ports()
     items = []
+    probe_cache = {}
+    info_parts = []
+
     for p in ports:
         port_name = p['port'] or ''
         desc = p['description'] or ''
         hwid = p.get('hwid', '') or ''
 
-        # 跨平台 USB 设备标记
         is_hardware = (
             'USB' in desc.upper() or
             'ACM' in port_name or
@@ -122,31 +211,70 @@ def scan_fn():
             bool(desc and desc != 'n/a')
         )
 
+        probe_info = None
+        if is_hardware and ('3563' in hwid or '2000' in hwid):
+            if port_name not in probe_cache:
+                probe_cache[port_name] = _probe_at_port(port_name)
+            probe_info = probe_cache[port_name]
+
+        tag = probe_info.get('tag', '') if isinstance(probe_info, dict) else (probe_info or '')
+
         label = f"{port_name}  {desc}" if desc and desc != 'n/a' else port_name
+        if tag:
+            label = f"{label} {tag}"
+            # 收集AT口的模组详细信息（排除二进制数据误入）
+            if isinstance(probe_info, dict) and probe_info.get('model'):
+                model_str = probe_info['model']
+                ver_str = probe_info.get('version', '')
+                # 确保不是二进制垃圾
+                if all(32 <= ord(c) <= 126 or c in '\r\n\t' for c in model_str):
+                    info_parts.append(
+                        f"**{port_name}**  {model_str}"
+                        + (f"  |  固件: {ver_str}" if ver_str else '')
+                    )
         if is_hardware:
             label = f"🔵 {label}"
+        elif tag == "[无响应]":
+            label = f"🔴 {label}"
         items.append(label)
-    return gr.Dropdown(choices=items or ["无可用串口"])
+
+    # 生成状态信息
+    if info_parts:
+        status = "### 📡 已探测到模组\n" + "\n".join(info_parts)
+    elif items:
+        status = f"### 🔍 扫描到 {len(items)} 个串口\n未发现中移物联模组（VID=3563）的AT口"
+    else:
+        status = "### ❌ 未发现可用串口"
+    return gr.Dropdown(choices=items or ["无可用串口"]), status
 
 
 def connect_fn(port_str, baud):
     if not port_str or port_str == "无可用串口" or port_str is None:
         return "⚠️ 请先扫描并选择端口"
-    # 从下拉标签中提取端口名：格式为 "🔵 COM3  USB Serial Port" 或 "/dev/ttyUSB0  ..."
     port = port_str.replace("🔵", "").replace("🔴", "").strip().split()[0]
-    # 跨平台端口名：Windows 是 COM3 格式，Linux/macOS 是 /dev/ttyXXX 格式
-    # 不做任何路径改写，pyserial 原生接受所有平台的端口名
     try:
         ok = serial.open(port, int(baud))
         if ok:
             session.test_agent.executor.serial = serial
+            # 探测模组信息，存入 session.context 供缺陷生成使用
+            info = _probe_at_port(port)
+            if isinstance(info, dict) and info.get('model'):
+                session.context['module_info'] = info['model']
+                session.context['firmware_ver'] = info.get('version', '')
+            else:
+                session.context['module_info'] = ''
+                session.context['firmware_ver'] = ''
         return f"✅ 已连接 {port} @ {baud}" if ok else f"❌ 连接失败（串口可能被占用）"
     except Exception as e:
+        session.context['module_info'] = ''
+        session.context['firmware_ver'] = ''
         return f"❌ 连接失败: {str(e)[:60]}"
 
 
 def disconnect_fn():
     serial.close()
+    session.context['module_info'] = ''
+    session.context['firmware_ver'] = ''
     return "🔒 已断开"
 
 
@@ -360,7 +488,7 @@ def exec_plan_fn(suite_name):
         if run.status == 'PASS': passed += 1; icon = "✅"
         elif run.status == 'FAIL': failed += 1; icon = "❌"
         else: icon = "⚠️"
-        at_cmd = (run.at_command or case.sheet_name)[:60]
+        at_cmd = (run.at_command or case.sheet_name)[:200]
         actual_d = f"\n```\n{(run.actual or '').strip()[:150]}\n```" if run.actual else "\n*(无响应)*"
         progress.append(f"  {icon} **{case.case_name}** ({run.duration_ms}ms)\n    `>>> {at_cmd}`{actual_d}")
         yield f"**进度:** ✅{passed}  ❌{failed}  /  {total}\n---\n" + "\n".join(progress[-12:])
@@ -818,7 +946,7 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
         port_dd = gr.Dropdown(label="端口", choices=[], scale=3)
         baud_in = gr.Number(label="波特率", value=115200, precision=0, scale=1)
         status_box = gr.Textbox(label="状态", value="未连接", scale=2)
-        gr.Button("🔍 扫描", scale=1).click(scan_fn, None, port_dd)
+        gr.Button("🔍 扫描", scale=1).click(scan_fn, None, [port_dd, status_box])
         gr.Button("✅ 连接", scale=1).click(connect_fn, [port_dd, baud_in], status_box)
         gr.Button("❌ 断开", scale=1).click(disconnect_fn, None, status_box)
 
@@ -1066,8 +1194,8 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                             continue
                         for c in ts.get('cases', []):
                             rows.append([False, sn,
-                                         c.get('case_name', '')[:35],
-                                         (c.get('at_cmd', '') or c.get('module', ''))[:40],
+                                         c.get('case_name', '')[:60],
+                                         (c.get('at_cmd', '') or c.get('module', ''))[:200],
                                          str(c.get('timeout', 10)),
                                          str(c.get('delay', '') if c.get('delay') is not None else '')])
                     while len(rows) < 20:
@@ -1163,7 +1291,7 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                     idx = 0
                     for r in rows:
                         if str(r[1]).strip():
-                            tc = TC(excel_file='', sheet_name=str(r[3])[:45] if len(r) > 3 else '',
+                            tc = TC(excel_file='', sheet_name=str(r[3])[:200] if len(r) > 3 else '',
                                     row_id=0, test_group=str(r[1]), case_name=str(r[2]) if len(r) > 2 else '',
                                     params={'send_data': str(r[3]) if len(r) > 3 else ''},
                                     expected_results=['OK'], timeout=int(r[4]) if len(r) > 4 and str(r[4]).strip() else 10,
@@ -1240,7 +1368,9 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                             ok = 0
                             for r in all_results:
                                 if r.status != 'FAIL': continue
-                                desc = (f"## 缺陷报告\n\n### 测试环境\n- **方案:** {plan_name}\n"
+                                desc = (f"## 缺陷报告\n\n### 测试环境\n- **模组型号:** {session.context.get('module_info', '未知')}\n"
+                                    f"- **固件版本:** {session.context.get('firmware_ver', '未知')}\n"
+                                    f"- **方案:** {plan_name}\n"
                                     f"- **串口:** {serial.port} @ {serial.baudrate}\n"
                                     f"- **测试指令:** `{r.at_command or ''}`\n- **指令耗时:** {r.duration_ms}ms\n\n"
                                     f"### 实际结果\n```\n{(r.actual or '').strip()[:200]}\n```\n"
