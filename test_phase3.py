@@ -28,7 +28,10 @@ print(f"   file: {defect['local_file']}")
 
 # 验证 JSON 文件
 import json
+from defect.local_defect_store import PROJECT_ROOT
 json_path = defect['local_file']
+if not os.path.isabs(json_path):
+    json_path = os.path.join(PROJECT_ROOT, json_path)
 with open(json_path) as f:
     jd = json.load(f)
 print(f"   JSON: {len(json.dumps(jd, ensure_ascii=False))} bytes")

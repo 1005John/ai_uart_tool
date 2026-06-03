@@ -1,6 +1,6 @@
 # AI Native UART Tool — 系统设计
 
-| 版本：v1.3 | 日期：2026-06-01 | 对应需求：REQUIREMENTS.md v1.3
+| 版本：v1.4 | 日期：2026-06-03 | 对应需求：REQUIREMENTS.md v1.4
 
 ## 1. 架构概览
 

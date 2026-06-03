@@ -1,0 +1,330 @@
+#!/usr/bin/env python3
+"""
+Lingji Platform Login Tool
+
+Guides you to get the login token from browser extension and complete lc CLI login.
+
+Usage:
+  lingji-login                       Interactive mode
+  lingji-login --token "TOKEN"       Quick login with token
+  lingji-login --check               Check login status
+  lingji-login --list-projects       List available projects
+"""
+
+import sys, os, json, re, subprocess, shutil
+from pathlib import Path
+
+CONFIG_FILE = Path.home() / ".ai_uart_keys.json"
+
+
+def find_lc() -> str:
+    for name in ["lc", "lc.cmd", "lc.exe"]:
+        path = shutil.which(name)
+        if path:
+            return path
+    return None
+
+
+def run_lc(args: list, timeout: int = 15) -> dict:
+    lc = find_lc()
+    if not lc:
+        return {"ok": False, "output": "[X] lc command not found"}
+    try:
+        r = subprocess.run(
+            [lc] + args, capture_output=True, text=True, timeout=timeout,
+            env={**os.environ}
+        )
+        return {
+            "ok": r.returncode == 0,
+            "output": r.stdout.strip() or r.stderr.strip(),
+            "returncode": r.returncode,
+        }
+    except FileNotFoundError:
+        return {"ok": False, "output": "[X] lc command not found"}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "output": "[X] Command timed out"}
+
+
+def check_login() -> dict:
+    return run_lc(["checkin"])
+
+
+def do_login(token: str) -> dict:
+    token = token.strip()
+    if token.startswith("lc login "):
+        token = token[9:].strip()
+    if token.startswith("-c "):
+        token = token[3:].strip().strip("'\"")
+    if token.startswith("MOSS_SESSION="):
+        return run_lc(["login", "-c", token])
+    else:
+        return run_lc(["login", token])
+
+
+def list_projects(workspace: str = "CMIOTonemoredcap") -> list:
+    lc = find_lc()
+    if not lc:
+        return []
+    try:
+        r = subprocess.run(
+            [lc, "space", "project", "linked",
+             "--workspace-key", workspace, "--size", "50", "--pretty"],
+            capture_output=True, text=True, timeout=15
+        )
+        if r.returncode != 0:
+            return []
+        data = json.loads(r.stdout)
+        items = data.get("data", {}).get("items", [])
+        return [{
+            "code": i.get("projectCode", ""),
+            "name": i.get("projectName", ""),
+            "id": i.get("id", ""),
+        } for i in items if i.get("projectCode")]
+    except (json.JSONDecodeError, KeyError, subprocess.TimeoutExpired):
+        return []
+
+
+def list_handlers(workspace: str = "CMIOTonemoredcap") -> list:
+    lc = find_lc()
+    if not lc:
+        return []
+    try:
+        r = subprocess.run(
+            [lc, "bug", "list", "-w", workspace, "-l", "100", "--pretty"],
+            capture_output=True, text=True, timeout=15
+        )
+        if r.returncode != 0:
+            return []
+        data = json.loads(r.stdout)
+        items = data.get("data", {}).get("items", [])
+        seen = {}
+        for i in items:
+            hid = i.get("handlerId", "")
+            hname = i.get("handlerName", "")
+            if hid and hname and hid not in seen:
+                m = re.match(r'(.+?)\((.+?)\)', hname)
+                name = m.group(1) if m else hname
+                email = m.group(2) if m else ""
+                seen[hid] = {"id": hid, "name": name, "email": email}
+        return list(seen.values())
+    except (json.JSONDecodeError, KeyError, subprocess.TimeoutExpired):
+        return []
+
+
+def save_lingji_config(workspace: str, project: str, handler_id: str, handler_name: str = ""):
+    config = {}
+    if CONFIG_FILE.exists():
+        with open(CONFIG_FILE) as f:
+            config = json.load(f)
+    config["lingji"] = {
+        "workspace": workspace,
+        "project": project,
+        "handler_id": handler_id,
+        "handler_name": handler_name,
+    }
+    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(config, f, ensure_ascii=False, indent=2)
+    print(f"  [OK] Config saved to {CONFIG_FILE}")
+
+
+def interactive_login():
+    print("=" * 60)
+    print("  Lingji Platform Login Tool")
+    print("=" * 60)
+
+    # Step 1: Check lc
+    print("\n[Step 1] Check lc CLI tool")
+    lc_path = find_lc()
+    if lc_path:
+        print(f"  [OK] lc found: {lc_path}")
+    else:
+        print("  [X] lc not found")
+        print()
+        print("  Please download lc CLI from Lingji platform:")
+        print("  1. Open Lingji platform -> Profile -> CLI Tools")
+        print("  2. Download the version for your OS")
+        print("  3. Place lc in a PATH directory")
+        input("\n  Press Enter after installing...")
+        lc_path = find_lc()
+        if not lc_path:
+            print("  [X] lc still not found, aborting")
+            sys.exit(1)
+        print(f"  [OK] lc found: {lc_path}")
+
+    # Step 2: Check login status
+    print("\n[Step 2] Check login status")
+    status = check_login()
+    if status["ok"]:
+        print("  [OK] Already logged in")
+    else:
+        print("  [i] Not logged in or session expired")
+
+    # Step 3: Get token
+    print("\n[Step 3] Get login token from browser extension")
+    print()
+    print("  Steps:")
+    print("  1. Open Lingji platform in Chrome/Firefox")
+    print("  2. Click the Lingji extension icon in the toolbar")
+    print("  3. Click 'Copy Login Command' button")
+    print("  4. Paste the copied content below")
+    print()
+    print("  (The content looks like: lc login -c \"MOSS_SESSION=eyJ...\")")
+    print()
+
+    token = input("  Paste token > ").strip()
+    if not token:
+        print("  [X] No input")
+        sys.exit(1)
+
+    # Step 4: Login
+    print("\n[Step 4] Logging in...")
+    result = do_login(token)
+    if result["ok"]:
+        print("  [OK] Login successful!")
+    else:
+        print(f"  [X] Login failed: {result['output'][:200]}")
+        print("\n  Trying alternative method...")
+        print("  Please copy only the MOSS_SESSION=... part")
+        token2 = input("  Paste MOSS_SESSION > ").strip()
+        if token2:
+            result2 = do_login(f"-c '{token2}'" if not token2.startswith("-c") else token2)
+            if result2["ok"]:
+                print("  [OK] Login successful!")
+            else:
+                print(f"  [X] Login failed: {result2['output'][:200]}")
+                sys.exit(1)
+
+    # Step 5: Verify
+    print("\n[Step 5] Verifying login...")
+    status = check_login()
+    if status["ok"]:
+        print("  [OK] Login verified")
+    else:
+        print("  [i] Verification: " + status["output"][:100])
+
+    # Step 6: List projects
+    print("\n[Step 6] Fetching projects...")
+    projects = list_projects()
+    if projects:
+        print(f"  [OK] Got {len(projects)} projects:")
+        for i, p in enumerate(projects[:10], 1):
+            print(f"     {i}. {p['name']} ({p['code']})")
+        if len(projects) > 10:
+            print(f"     ... +{len(projects)-10} more")
+
+        print("\n  Select default project for defect submission:")
+        for i, p in enumerate(projects, 1):
+            print(f"     {i}. {p['name']} ({p['code']})")
+        sel = input(f"\n  Number (1-{len(projects)}) > ").strip()
+        try:
+            idx = int(sel) - 1
+            selected_project = projects[idx]
+        except (ValueError, IndexError):
+            selected_project = projects[0]
+        print(f"  [OK] Selected: {selected_project['name']}")
+    else:
+        print("  [i] No projects found, using defaults")
+        selected_project = {"code": "R2511D9QC0N", "name": "Default", "id": ""}
+
+    # Step 7: Select handler
+    print("\n[Step 7] Select default handler")
+    handlers = list_handlers()
+    if handlers:
+        print(f"  Found {len(handlers)} handlers:")
+        for i, h in enumerate(handlers, 1):
+            print(f"     {i}. {h['name']} ({h['email']})")
+        sel = input(f"\n  Number (1-{len(handlers)}) > ").strip()
+        try:
+            idx = int(sel) - 1
+            selected_handler = handlers[idx]
+        except (ValueError, IndexError):
+            selected_handler = {"id": "", "name": "", "email": ""}
+    else:
+        print("  [i] No handlers found, skipping")
+        selected_handler = {"id": "", "name": "", "email": ""}
+
+    # Step 8: Save
+    print("\n[Step 8] Save config")
+    save_lingji_config(
+        workspace="CMIOTonemoredcap",
+        project=selected_project.get("code", "R2511D9QC0N"),
+        handler_id=selected_handler.get("id", ""),
+        handler_name=selected_handler.get("name", ""),
+    )
+
+    print()
+    print("=" * 60)
+    print("  Setup complete!")
+    print()
+    print("  Open AI UART Tool Web UI -> Defects tab")
+    print("  Click 'Fetch' to load projects and handlers")
+    print("=" * 60)
+
+
+def quick_login():
+    if len(sys.argv) < 3:
+        print("Usage: lingji-login --token \"MOSS_SESSION=...\"")
+        sys.exit(1)
+    token = sys.argv[2]
+    print("Logging in to Lingji...")
+    r = do_login(token)
+    if r["ok"]:
+        print("[OK] Login successful")
+    else:
+        print(f"[X] Login failed: {r['output'][:200]}")
+        sys.exit(1)
+
+
+def show_status():
+    print("Checking Lingji login status...")
+    lc_path = find_lc()
+    if not lc_path:
+        print("[X] lc not installed")
+        sys.exit(1)
+    print(f"  lc: {lc_path}")
+    r = check_login()
+    if r["ok"]:
+        print("[OK] Status: Logged in")
+    else:
+        print("[X] Status: Not logged in")
+    if CONFIG_FILE.exists():
+        with open(CONFIG_FILE) as f:
+            cfg = json.load(f)
+        lingji = cfg.get("lingji", {})
+        if lingji:
+            print(f"\nConfig:")
+            print(f"  workspace: {lingji.get('workspace', '-')}")
+            print(f"  project:   {lingji.get('project', '-')}")
+            print(f"  handler:   {lingji.get('handler_name', lingji.get('handler_id', '-'))}")
+
+
+def show_projects():
+    print("Fetching Lingji projects...")
+    r = check_login()
+    if not r["ok"]:
+        print("[X] Not logged in. Run 'lingji-login' first")
+        sys.exit(1)
+    projects = list_projects()
+    if not projects:
+        print("[i] No projects found")
+        sys.exit(1)
+    print(f"\nTotal: {len(projects)} projects\n")
+    for p in projects:
+        print(f"  {p['code']:20s} {p['name']}")
+
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1:
+        if sys.argv[1] in ("--check", "-c"):
+            show_status()
+        elif sys.argv[1] in ("--token", "-t"):
+            quick_login()
+        elif sys.argv[1] in ("--list-projects", "-l"):
+            show_projects()
+        elif sys.argv[1] in ("--help", "-h"):
+            print(__doc__)
+        else:
+            print(f"Unknown arg: {sys.argv[1]}")
+    else:
+        interactive_login()

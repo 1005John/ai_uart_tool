@@ -1,5 +1,18 @@
 # 变更日志
 
+## [v1.4.0] - 2026-06-03
+
+### 新增
+- 灵畿多研发空间支持：跨 workspace 获取项目列表和处理人
+- `tools/lingji-login` 登录工具：交互式引导 + 项目/责任人配置
+- 项目下拉显示所属 workspace（`项目名 (code) [workspace]`）
+- 责任人改为姓名输入方式（替代下拉），支持模糊匹配
+
+### 修复
+- lc 命令编码问题：`encoding='utf-8'` 明确指定
+- CA 证书路径跨平台适配（Windows `~/.lc/` / Linux `/tmp/`）
+- `list_all_projects()` 和 `list_all_handlers()` 跨空间聚合
+
 ## [v1.3.0] - 2026-06-01
 
 ### 新增

@@ -730,12 +730,14 @@ def batch_delete_defect_fn(table_data):
 
 _DEFAULT_HANDLER_ID = "1966881909663256588"  # 傅强
 
+_PROJECT_WORKSPACE_MAP = {}  # project_code -> workspace
+_HANDLER_NAME_MAP = {}       # name -> handler_id
+
 def fetch_projects_for_lingji_fn():
-    """获取灵畿项目列表和处理人列表"""
+    """获取灵畿项目列表和处理人列表（跨所有研发空间）"""
     try:
         sync = session.defect_agent.sync
-        projects = sync.list_projects()
-        handlers = sync.list_handlers()
+        projects = sync.list_all_projects()
 
         # ── 项目下拉 ──
         if not projects:
@@ -743,52 +745,56 @@ def fetch_projects_for_lingji_fn():
                                   label="📁 目标项目（未获取到）")
             proj_msg = "⚠️ 未获取到项目，请确认已登录灵畿且 workspace 正确"
         else:
-            choices = [(f"{p['name']} ({p['code']})", p['code']) for p in projects]
+            _PROJECT_WORKSPACE_MAP.clear()
+            for p in projects:
+                _PROJECT_WORKSPACE_MAP[p['code']] = p['workspace']
+            choices = [
+                (f"{p['name']} ({p['code']}) [{p['workspace']}]", p['code'])
+                for p in projects
+            ]
             proj_dd = gr.Dropdown(choices=choices, value=choices[0][1], interactive=True,
                                   label=f"📁 目标项目（共 {len(projects)} 个）")
             proj_msg = f"✅ 已获取 {len(projects)} 个项目"
 
-        # ── 处理人下拉 ──
-        if handlers:
-            handler_choices = [(f"{h['name']} ({h['email']})", h['id']) for h in handlers]
-            # 默认选中傅强
-            default_handler = None
-            for h in handlers:
-                if h['name'] == '傅强':
-                    default_handler = h['id']
-                    break
-            handler_dd = gr.Dropdown(
-                choices=handler_choices, value=default_handler or handler_choices[0][1],
-                interactive=True, label=f"👤 缺陷责任人（共 {len(handlers)} 人）")
-            msg = f"{proj_msg}，{len(handlers)} 位责任人"
-        else:
-            # 无历史数据时，使用默认handler_id
-            handler_dd = gr.Dropdown(
-                choices=[("傅强 (默认)", _DEFAULT_HANDLER_ID)],
-                value=_DEFAULT_HANDLER_ID,
-                interactive=True, label="👤 缺陷责任人（默认）")
-            msg = f"{proj_msg}，无历史缺陷数据，使用默认责任人"
+        # ── 责任人改为姓名输入 ──
+        handlers = sync.list_all_handlers()
+        _HANDLER_NAME_MAP.clear()
+        for h in handlers:
+            _HANDLER_NAME_MAP[h['name']] = h['id']
+        name_hint = "、".join(_HANDLER_NAME_MAP.keys()) if _HANDLER_NAME_MAP else "傅强"
 
-        return proj_dd, handler_dd, f"### {msg}，选好项目和责任人后点提交"
+        handler_dd = gr.Textbox(
+            value="傅强",
+            placeholder=f"可用: {name_hint}",
+            label="👤 缺陷责任人（填姓名）",
+        )
+        msg = f"{proj_msg}"
+
+        return proj_dd, handler_dd, f"### {msg}，填好责任人后点提交"
     except Exception as e:
         return (gr.Dropdown(choices=[], value=None, interactive=True, label="📁 目标项目"),
-                gr.Dropdown(choices=[("傅强 (默认)", _DEFAULT_HANDLER_ID)],
-                            value=_DEFAULT_HANDLER_ID, interactive=True, label="👤 缺陷责任人"),
+                gr.Textbox(value="傅强", label="👤 缺陷责任人（填姓名）"),
                 f"❌ 获取失败: {str(e)[:60]}")
 
 
-def submit_checked_to_lingji_fn(project_code, handler_id, table_data):
+def submit_checked_to_lingji_fn(project_code, handler_name, table_data):
     """提交勾选的缺陷到灵畿平台"""
     global _DEFECT_CACHE
 
     if not project_code:
         yield "### ❌ 请先选择项目"
         return
-    if not handler_id or str(handler_id).strip() == "0":
-        yield "### ❌ 请选择缺陷责任人"
+    if not handler_name or not str(handler_name).strip():
+        yield "### ❌ 请填写缺陷责任人姓名"
         return
 
-    handler = str(handler_id).strip()
+    handler_name = str(handler_name).strip()
+    # 姓名 → ID 查找
+    handler = _HANDLER_NAME_MAP.get(handler_name)
+    if not handler:
+        known = "、".join(_HANDLER_NAME_MAP.keys()) if _HANDLER_NAME_MAP else "无"
+        yield f"### ❌ 未找到责任人「{handler_name}」，已知责任人: {known}"
+        return
     if table_data is None or len(table_data) == 0:
         yield "### ❌ 缺陷列表为空"
         return
@@ -868,6 +874,7 @@ def submit_checked_to_lingji_fn(project_code, handler_id, table_data):
                 priority=defect.get('priority', 1),
                 project=project_code,
                 handler_id=handler,
+                workspace=_PROJECT_WORKSPACE_MAP.get(project_code),
             )
             if r['ok'] and r['bug_id']:
                 bug_id = r['bug_id']
@@ -1444,7 +1451,7 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                 # 提交灵畿
                 with gr.Row():
                     lingji_project_dd = gr.Dropdown(label="📁 项目", choices=[], interactive=True, scale=2)
-                    lingji_handler_dd = gr.Dropdown(label="👤 责任人", choices=[], interactive=True, scale=2)
+                    lingji_handler_dd = gr.Textbox(label="👤 责任人（填姓名）", scale=2)
                     fetch_projects_btn = gr.Button("🔄 获取", scale=1)
                     lingji_confirm_btn = gr.Button("⬆️ 提交勾选", variant="primary", scale=1)
                 lingji_progress = gr.Markdown("")
@@ -1597,7 +1604,7 @@ if __name__ == "__main__":
         host = socket.gethostbyname(socket.gethostname())
     except socket.gaierror:
         host = "127.0.0.1"
-    print(f"\n🌐 http://localhost:7860  (本机: http://{host}:7860)\n")
+    print(f"\n*** AI UART Tool: http://localhost:7860 (本机: http://{host}:7860) ***\n")
     ui.launch(server_name="0.0.0.0", server_port=7860, head="""<style>
 #serial-bar { position: sticky; top: 0; z-index: 100; background: var(--background-fill-primary, #fff); padding: 6px 0; border-bottom: 1px solid var(--border-color-primary, #ddd); margin-bottom: 4px; }
 html { scroll-behavior: smooth; overscroll-behavior: auto; }

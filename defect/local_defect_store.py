@@ -8,7 +8,8 @@ from typing import Optional
 from models.database import get_connection
 
 
-DEFECT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "defects")
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFECT_DIR = os.path.join(PROJECT_ROOT, "defects")
 
 
 class LocalDefectStore:
@@ -190,11 +191,12 @@ class LocalDefectStore:
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(export, f, ensure_ascii=False, indent=2)
 
-        # 更新 local_file 字段
+        # 更新 local_file 字段（相对路径）
+        rel_path = os.path.relpath(filepath, PROJECT_ROOT)
         conn = get_connection()
         conn.execute(
             "UPDATE local_defects SET local_file=? WHERE id=?",
-            (filepath, defect_id)
+            (rel_path, defect_id)
         )
         conn.commit()
         conn.close()

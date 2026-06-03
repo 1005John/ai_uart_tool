@@ -5,16 +5,28 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from typing import Optional
 
 
-# 默认配置
-DEFAULT_CONFIG = {
+# 默认配置（优先从 ~/.ai_uart_keys.json 加载）
+_DEFAULT_CONFIG = {
     "workspace": "CMIOTonemoredcap",
     "project": "R2511D9QC0N",
     "handler_id": "1966881909663256588",
 }
+
+_KEY_FILE = os.path.expanduser("~/.ai_uart_keys.json")
+if os.path.exists(_KEY_FILE):
+    try:
+        with open(_KEY_FILE) as _f:
+            _kc = json.load(_f).get("lingji", {})
+            if _kc.get("workspace"): _DEFAULT_CONFIG["workspace"] = _kc["workspace"]
+            if _kc.get("project"):    _DEFAULT_CONFIG["project"] = _kc["project"]
+            if _kc.get("handler_id"): _DEFAULT_CONFIG["handler_id"] = _kc["handler_id"]
+    except (json.JSONDecodeError, IOError):
+        pass
 
 
 class LingjiSync:
@@ -30,9 +42,9 @@ class LingjiSync:
 
     def __init__(self, workspace: str = None, project: str = None,
                  handler_id: str = None):
-        self.workspace = workspace or DEFAULT_CONFIG['workspace']
-        self.project = project or DEFAULT_CONFIG['project']
-        self.handler_id = handler_id or DEFAULT_CONFIG['handler_id']
+        self.workspace = workspace or _DEFAULT_CONFIG['workspace']
+        self.project = project or _DEFAULT_CONFIG['project']
+        self.handler_id = handler_id or _DEFAULT_CONFIG['handler_id']
         self.lc_path = self._find_lc()
 
     def _find_lc(self) -> str:
@@ -101,6 +113,19 @@ class LingjiSync:
             "message": result['stdout'] or result['stderr'],
         }
 
+    # ── 空间操作 ──
+
+    def _list_spaces(self) -> list[dict]:
+        """列出所有研发空间"""
+        result = self._run_lc(["space", "list", "--pretty"])
+        if result['returncode'] != 0:
+            return []
+        try:
+            data = json.loads(result['stdout'])
+            return data.get('data') or []
+        except (json.JSONDecodeError, KeyError):
+            return []
+
     # ── 项目操作 ──
 
     def list_projects(self, workspace: str = None) -> list[dict]:
@@ -120,14 +145,36 @@ class LingjiSync:
             return []
         try:
             data = json.loads(result['stdout'])
-            items = data.get('data', {}).get('items', [])
+            items = data.get('data', {}).get('items') or []
             return [{
                 "code": i.get('projectCode', ''),
                 "name": i.get('projectName', ''),
                 "id": i.get('id', ''),
+                "workspace": ws,
             } for i in items if i.get('projectCode')]
         except (json.JSONDecodeError, KeyError):
             return []
+
+    def list_all_projects(self) -> list[dict]:
+        """列出所有研发空间下的所有项目（去重）
+
+        Returns:
+            [{"code": str, "name": str, "id": str, "workspace": str}]
+        """
+        spaces = self._list_spaces()
+        seen_code = set()
+        all_projects = []
+        for s in spaces:
+            sc = s.get('spaceCode', '')
+            if not sc:
+                continue
+            projs = self.list_projects(workspace=sc)
+            for p in projs:
+                code = p['code']
+                if code not in seen_code:
+                    seen_code.add(code)
+                    all_projects.append(p)
+        return all_projects
 
     # ── 用户操作 ──
 
@@ -139,20 +186,18 @@ class LingjiSync:
         """
         ws = workspace or self.workspace
         result = self._run_lc([
-            "bug", "list", "-w", ws, "-l", "100", "--pretty",
+            "bug", "list", "-w", ws, "-l", "500", "--pretty",
         ])
         if result['returncode'] != 0:
             return []
         try:
             data = json.loads(result['stdout'])
-            items = data.get('data', {}).get('items', [])
+            items = data.get('data', {}).get('items') or []
             seen = {}
             for i in items:
                 hid = i.get('handlerId', '')
                 hname = i.get('handlerName', '')
                 if hid and hname and hid not in seen:
-                    # handlerName format: "傅强(fuqiang@cmiot.cmcc)"
-                    import re
                     m = re.match(r'(.+?)\((.+?)\)', hname)
                     name = m.group(1) if m else hname
                     email = m.group(2) if m else ''
@@ -161,12 +206,26 @@ class LingjiSync:
         except (json.JSONDecodeError, KeyError):
             return []
 
+    def list_all_handlers(self) -> list[dict]:
+        """从所有空间的缺陷中提取处理人（去重）"""
+        spaces = self._list_spaces()
+        seen = {}
+        for s in spaces:
+            sc = s.get('spaceCode', '')
+            if not sc:
+                continue
+            for h in self.list_handlers(workspace=sc):
+                if h['id'] not in seen:
+                    seen[h['id']] = h
+        return list(seen.values())
+
     # ── 缺陷操作 ──
 
     def create_bug(self, title: str, description: str,
                    severity: int = 2, priority: int = 1,
                    bug_type: int = 1,
-                   project: str = None, handler_id: str = None) -> dict:
+                   project: str = None, handler_id: str = None,
+                   workspace: str = None) -> dict:
         """
         创建灵畿缺陷
 
@@ -184,6 +243,7 @@ class LingjiSync:
         """
         p = project or self.project
         h = handler_id or self.handler_id
+        w = workspace or self.workspace
 
         # 1. 关闭只读模式
         self.readonly_off(duration=5)
@@ -194,7 +254,7 @@ class LingjiSync:
             "-t", title,
             "-D", description,
             "-p", p,
-            "-w", self.workspace,
+            "-w", w,
             "--handler-id", h,
             "--template-simple",
             "-l", str(severity),
@@ -279,10 +339,16 @@ class LingjiSync:
         """执行 lc 命令"""
         cmd = [self.lc_path] + args
         env = os.environ.copy()
-        env['NODE_EXTRA_CA_CERTS'] = '/tmp/cmca-combined.crt'
+        # CA 证书路径（跨平台）
+        if sys.platform == 'win32':
+            ca_path = os.path.expanduser('~/.lc/cmca-combined.crt')
+        else:
+            ca_path = '/tmp/cmca-combined.crt'
+        if os.path.exists(ca_path):
+            env['NODE_EXTRA_CA_CERTS'] = ca_path
         try:
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=30, env=env
+                cmd, capture_output=True, text=True, encoding='utf-8', timeout=30, env=env
             )
             return {
                 "returncode": result.returncode,
