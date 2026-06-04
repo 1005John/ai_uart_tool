@@ -106,11 +106,16 @@ class LingjiSync:
     # ── 只读模式 ──
 
     def readonly_off(self, duration: int = 10) -> dict:
-        """关闭只读模式"""
-        result = self._run_lc(["readonly", "off", "--duration", f"{duration}m"])
+        """关闭只读模式（自动重试一次）"""
+        for attempt in range(2):
+            result = self._run_lc(["readonly", "off", "--duration", f"{duration}m"])
+            if result['returncode'] == 0:
+                return {"ok": True, "message": ""}
+            if attempt == 0:
+                time.sleep(1)
         return {
-            "ok": result['returncode'] == 0,
-            "message": result['stdout'] or result['stderr'],
+            "ok": False,
+            "message": result['stderr'] or result['stdout'],
         }
 
     # ── 空间操作 ──
@@ -246,15 +251,22 @@ class LingjiSync:
         w = workspace or self.workspace
 
         # 1. 关闭只读模式
-        self.readonly_off(duration=5)
+        ro = self.readonly_off(duration=5)
+        if not ro['ok']:
+            return {
+                "ok": False, "bug_id": None,
+                "message": f"关闭只读模式失败: {ro['message'][:100]}",
+            }
 
-        # 2. 创建缺陷
+        # 2. 创建缺陷（Windows CMD 参数内不支持换行，清理掉）
+        safe_title = title.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ').strip()
+        safe_desc = description.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ').strip()
         cmd = [
             "bug", "create",
-            "-t", title,
-            "-D", description,
-            "-p", p,
-            "-w", w,
+            "-t", safe_title,
+            "-D", safe_desc,
+            "--project-id", p,
+            "--workspace-key", w,
             "--handler-id", h,
             "--template-simple",
             "-l", str(severity),
@@ -346,6 +358,12 @@ class LingjiSync:
             ca_path = '/tmp/cmca-combined.crt'
         if os.path.exists(ca_path):
             env['NODE_EXTRA_CA_CERTS'] = ca_path
+        # 调试日志
+        try:
+            with open(os.path.join(os.path.dirname(__file__), '..', 'data', 'lc_debug.log'), 'a', encoding='utf-8') as _df:
+                _df.write(f"[{time.strftime('%H:%M:%S')}] {' '.join(str(a) for a in cmd)}\n")
+        except Exception:
+            pass
         try:
             result = subprocess.run(
                 cmd, capture_output=True, text=True, encoding='utf-8', timeout=30, env=env

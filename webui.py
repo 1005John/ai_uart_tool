@@ -729,6 +729,7 @@ def batch_delete_defect_fn(table_data):
 # ── 提交到灵畿 ──
 
 _DEFAULT_HANDLER_ID = "1966881909663256588"  # 傅强
+_KEY_FILE = os.path.expanduser("~/.ai_uart_keys.json")
 
 _PROJECT_WORKSPACE_MAP = {}  # project_code -> workspace
 _HANDLER_NAME_MAP = {}       # name -> handler_id
@@ -761,11 +762,11 @@ def fetch_projects_for_lingji_fn():
         _HANDLER_NAME_MAP.clear()
         for h in handlers:
             _HANDLER_NAME_MAP[h['name']] = h['id']
-        name_hint = "、".join(_HANDLER_NAME_MAP.keys()) if _HANDLER_NAME_MAP else "傅强"
+        name_hint = "、".join(_HANDLER_NAME_MAP.keys()) if _HANDLER_NAME_MAP else "（无）"
 
         handler_dd = gr.Textbox(
-            value="傅强",
-            placeholder=f"可用: {name_hint}",
+            value="",
+            placeholder=f"填写责任人姓名（可用: {name_hint}）",
             label="👤 缺陷责任人（填姓名）",
         )
         msg = f"{proj_msg}"
@@ -773,8 +774,27 @@ def fetch_projects_for_lingji_fn():
         return proj_dd, handler_dd, f"### {msg}，填好责任人后点提交"
     except Exception as e:
         return (gr.Dropdown(choices=[], value=None, interactive=True, label="📁 目标项目"),
-                gr.Textbox(value="傅强", label="👤 缺陷责任人（填姓名）"),
+                gr.Textbox(value="", label="👤 缺陷责任人（填姓名）"),
                 f"❌ 获取失败: {str(e)[:60]}")
+
+
+def _save_lingji_config(project_code: str, handler_name: str):
+    """将选中的项目和责任人保存到 ~/.ai_uart_keys.json"""
+    try:
+        config = {}
+        if os.path.exists(_KEY_FILE):
+            with open(_KEY_FILE, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+        handler_id = _HANDLER_NAME_MAP.get(handler_name, '')
+        config['lingji'] = {
+            'workspace': _PROJECT_WORKSPACE_MAP.get(project_code, ''),
+            'project': project_code,
+            'handler_id': handler_id,
+        }
+        with open(_KEY_FILE, 'w', encoding='utf-8') as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass  # 保存失败不影响主流程
 
 
 def submit_checked_to_lingji_fn(project_code, handler_name, table_data):
@@ -829,6 +849,18 @@ def submit_checked_to_lingji_fn(project_code, handler_name, table_data):
     results = []
 
     yield f"### 🚀 开始提交 {total} 条缺陷到灵畿...\n\n"
+
+    # 调试信息
+    ws = _PROJECT_WORKSPACE_MAP.get(project_code)
+    debug_info = f"项目: {project_code!r} | 责任人: {handler_name!r} (ID: {handler!r}) | 空间: {ws!r}"
+    yield f"> {debug_info}\n\n> 注意：如果这里显示的项目/责任人与你选的不符，请在缺陷管理重新点「获取」刷新\n\n"
+    # 同时写入文件便于排查
+    try:
+        os.makedirs('data', exist_ok=True)
+        with open('data/last_submit_debug.txt', 'w', encoding='utf-8') as f:
+            f.write(debug_info + '\n')
+    except:
+        pass
 
     # 统计标题使用次数，用于生成唯一后缀
     title_count = {}
@@ -930,6 +962,8 @@ def submit_checked_to_lingji_fn(project_code, handler_name, table_data):
                     "session_id": None,
                 }]
                 triple_count += k_store.save_triples(triples)
+        # 保存本次项目和责任人到配置文件（下次自动填充）
+        _save_lingji_config(project_code, handler_name)
         yield f"\n### ✅ 提交完成！\n" \
               f"- ✅ 成功: {ok_count}\n" \
               f"- ⏭️ 跳过(已提交): {skip_count}\n" \
@@ -938,7 +972,8 @@ def submit_checked_to_lingji_fn(project_code, handler_name, table_data):
               f"\n💡 切换到缺陷列表，刷新后可见已提交状态（📤）和灵畦编号\n" \
               f"💡 可在知识图谱标签页查询「灵畦缺陷」"
     else:
-        yield f"\n### ❌ 全部提交失败，请检查灵畦登录状态和项目配置"
+        err_summary = "\n".join(results[-5:]) if results else "无详细错误"
+        yield f"\n### ❌ 全部提交失败\n\n{err_summary}\n\n💡 请检查:\n1. 终端执行 `lc checkin` 确认登录状态\n2. 灵畿平台的项目和责任人配置是否正确\n3. 是否有权限在该项目创建缺陷"
 
 
 

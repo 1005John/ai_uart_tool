@@ -1,6 +1,6 @@
 # AI Native UART Tool — 系统设计
 
-| 版本：v1.5 | 日期：2026-06-04 | 对应需求：REQUIREMENTS.md v1.5
+| 版本：v1.5.1 | 日期：2026-06-04 | 对应需求：REQUIREMENTS.md v1.5.1
 
 ## 1. 架构概览
 
@@ -46,7 +46,7 @@
 | 📋 方案管理 | 左 | Radio + 轮次/间隔 + 用例集 Checkbox（勾选即保存） |
 | | 中 | Dataframe 用例表格（勾选→执行）→ 列: ☑/集名/名称/AT指令/**期望值**/超时/延迟 + 状态 |
 | | 右 | Textbox 执行日志（>>>发送 / <<<接收）+ 执行后显示文件路径 |
-| 🐛 缺陷管理 | 左 | Dataframe 缺陷列表 + 批量删除 + **刷新缺陷**按钮 + 灵畿提交 |
+| 🐛 缺陷管理 | 左 | Dataframe 缺陷列表 + 批量删除 + **刷新缺陷**按钮 + 灵畿提交（项目下拉+责任人姓名输入） |
 | | 右 | Markdown 缺陷详情 |
 
 ### 2.2 ChatSession — 对话会话
@@ -170,3 +170,6 @@ PASS/FAIL 结果 → KnowledgeTriple (知识三元组)
 | 灵畿通过 CLI 而非 API | 灵畿不提供 REST API | — |
 | 串口端口名不做路径改写 | pyserial 原生接受各平台格式（COM3 / /dev/ttyUSB0） | 按平台分支处理（太复杂） |
 | lc 查找用 shutil.which() | 替代 subprocess(["which"])，跨平台 | — |
+| lc 参数用长选项 --project-id 而非 -p | Windows CMD 批处理短选项解析兼容性更好 | -p（短选项在复杂参数下可能错位） |
+| 缺陷描述中换行替换为空格 | Windows cmd.exe 参数内换行符破坏参数解析 | 保留换行（仅 Linux/macOS 可用） |
+| 灵畿配置提交后自动保存到 ~/.ai_uart_keys.json | 免除用户手动编辑配置文件 | 手动编辑（不友好） |
