@@ -154,6 +154,17 @@ class LocalDefectStore:
         # 重新导出 JSON
         self._export_json(defect_id)
 
+    def update_description(self, defect_id: int, description: str):
+        """更新缺陷描述"""
+        conn = get_connection()
+        conn.execute(
+            "UPDATE local_defects SET description=? WHERE id=?",
+            (description, defect_id)
+        )
+        conn.commit()
+        conn.close()
+        self._export_json(defect_id)
+
     # ── 删除 ──
 
     def delete_defect(self, defect_id: int):

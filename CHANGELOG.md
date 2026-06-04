@@ -13,6 +13,8 @@
 - 提交失败时显示具体错误信息（原为笼统提示）
 - `-p`/`-w` 短选项改为 `--project-id`/`--workspace-key` 长选项，提高可读性
 - 增加 `_run_lc` 调试日志（data/lc_debug.log）
+- 缺陷详情描述改为可编辑 TextArea，支持修改后保存（`LocalDefectStore.update_description`）
+- 缺陷详情支持粘帖/上传截图图片，自动保存到 `defects/attachments/`，Markdown 引用嵌入描述
 
 ## [v1.5.0] - 2026-06-04
 

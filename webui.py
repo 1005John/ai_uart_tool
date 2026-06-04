@@ -32,6 +32,7 @@ EXEC_RESULT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dat
 TEST_SET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "test_sets")
 APP_START_TIME = datetime.now().isoformat()  # 本轮启动时间，用作缺陷时间筛选默认值
 _DEFECT_CACHE = []  # 缺陷列表缓存，用于行点击映射ID
+_CURRENT_DEFECT_ID = None  # 当前查看的缺陷ID，用于保存/上传
 
 
 # ── 持久化工具 ──
@@ -665,14 +666,33 @@ def refresh_defect_list_fn(since_time):
 
 def view_defect_by_row_fn(evt: gr.SelectData):
     """点击行查看缺陷详情"""
-    global _DEFECT_CACHE
+    global _DEFECT_CACHE, _CURRENT_DEFECT_ID
     if evt.index is None:
-        return "### 👆 请点击行"
+        return "### 👆 请点击行", "", ""
     row_idx, _ = evt.index if isinstance(evt.index, (list, tuple)) else (evt.index, 0)
     if row_idx < 0 or row_idx >= len(_DEFECT_CACHE):
-        return "### ❌ 无效行"
+        return "### ❌ 无效行", "", ""
     defect = _DEFECT_CACHE[row_idx]
-    return session.defect_agent.format_defect_detail(defect['id'])
+    _CURRENT_DEFECT_ID = defect['id']
+    store = session.defect_agent.store
+    d = store.get_defect(defect['id'])
+    if not d:
+        return "### ❌ 缺陷不存在", "", ""
+
+    status_map = {'local': '📝 本地', 'submitted': '📤 已提交', 'synced': '✅ 已同步'}
+    status_str = status_map.get(d['status'], d['status'])
+    lingji = f"灵畿ID: #{d['lingji_id']}" if d.get('lingji_id') else "未提交"
+    meta = (
+        f"### 缺陷 #{d['id']:04d} [{status_str}]\n"
+        f"{lingji}\n\n"
+        f"**标题**: {d['title']}\n"
+        f"**严重程度**: {d.get('severity', 2)}/4  **优先级**: {d.get('priority', 1)}/3\n"
+    )
+    if d.get('local_file'):
+        meta += f"\n📄 本地文件: `{d['local_file']}`\n"
+
+    desc = d.get('description', '') or ''
+    return meta, desc, ""
 
 
 def view_defect_by_id_fn(defect_id):
@@ -974,6 +994,46 @@ def submit_checked_to_lingji_fn(project_code, handler_name, table_data):
     else:
         err_summary = "\n".join(results[-5:]) if results else "无详细错误"
         yield f"\n### ❌ 全部提交失败\n\n{err_summary}\n\n💡 请检查:\n1. 终端执行 `lc checkin` 确认登录状态\n2. 灵畿平台的项目和责任人配置是否正确\n3. 是否有权限在该项目创建缺陷"
+
+
+# ── 缺陷详情编辑 ──
+
+_DEFECT_ATTACH_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "defects", "attachments")
+
+
+def save_defect_desc_fn(description):
+    """保存缺陷描述"""
+    global _CURRENT_DEFECT_ID
+    if not _CURRENT_DEFECT_ID:
+        return "### ❌ 请先点击缺陷行选择要编辑的缺陷"
+    try:
+        session.defect_agent.store.update_description(_CURRENT_DEFECT_ID, description)
+        return f"### ✅ 缺陷 #{_CURRENT_DEFECT_ID:04d} 描述已保存"
+    except Exception as e:
+        return f"### ❌ 保存失败: {str(e)[:60]}"
+
+
+def upload_defect_image_fn(image_path, current_desc):
+    """上传/粘帖图片，添加 Markdown 引用到描述"""
+    global _CURRENT_DEFECT_ID
+    if not _CURRENT_DEFECT_ID:
+        return current_desc or "", "### ❌ 请先点击缺陷行选择缺陷"
+    if not image_path:
+        return current_desc or "", ""
+
+    os.makedirs(_DEFECT_ATTACH_DIR, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"defect_{_CURRENT_DEFECT_ID:04d}_{ts}.png"
+    dest = os.path.join(_DEFECT_ATTACH_DIR, filename)
+    try:
+        import shutil
+        shutil.copy2(image_path, dest)
+        rel = os.path.relpath(dest, os.path.dirname(os.path.abspath(__file__)))
+        ref = f"\n![{filename}]({rel})"
+        new_desc = (current_desc or '') + ref
+        return new_desc, f"✅ 已添加 `{filename}`"
+    except Exception as e:
+        return current_desc or '', f"❌ 图片保存失败: {str(e)[:60]}"
 
 
 
@@ -1512,7 +1572,14 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                 lingji_progress = gr.Markdown("")
 
             with gr.Column(scale=1, min_width=300):
-                defect_detail = gr.Markdown("### 点击缺陷行查看详情")
+                defect_meta = gr.Markdown("### 点击缺陷行查看详情")
+                defect_desc = gr.TextArea(label="缺陷描述（可编辑，支持 Markdown 图片引用）",
+                                          lines=12, max_lines=30, interactive=True)
+                with gr.Row():
+                    defect_image = gr.Image(label="📷 粘帖/上传截图", sources=["clipboard", "upload"],
+                                            type="filepath", scale=1, height=120)
+                    save_desc_btn = gr.Button("💾 保存", scale=1, variant="primary")
+                defect_save_status = gr.Markdown("")
 
         # ── 辅助函数 ──
         def filter_defect_table(models, versions, titles, ds, de):
@@ -1590,7 +1657,12 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
             None, [date_start, date_end, model_filter, ver_filter, defect_table, defect_status])
 
         # 表格点击查看详情
-        defect_table.select(view_defect_by_row_fn, None, defect_detail)
+        defect_table.select(view_defect_by_row_fn, None,
+                            [defect_meta, defect_desc, defect_save_status])
+        save_desc_btn.click(save_defect_desc_fn, [defect_desc], defect_save_status)
+        defect_image.change(upload_defect_image_fn,
+                            [defect_image, defect_desc],
+                            [defect_desc, defect_save_status])
         # 批量删除（仅删除）
         batch_delete_btn.click(batch_delete_defect_fn, [defect_table],
                                [defect_table, defect_status])
