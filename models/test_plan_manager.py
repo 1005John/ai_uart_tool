@@ -61,8 +61,11 @@ def load_plan(name: str) -> Optional[dict]:
     path = _plan_path(name)
     if not os.path.exists(path):
         return None
-    with open(path, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return None
 
 
 def delete_plan(name: str):
@@ -103,8 +106,11 @@ def load_test_set(name: str) -> Optional[dict]:
     path = _set_path(name)
     if not os.path.exists(path):
         return None
-    with open(path, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return None
 
 
 def delete_test_set(name: str):

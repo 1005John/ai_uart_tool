@@ -6,10 +6,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 _user_site = os.path.expanduser('~/.local/lib/python3.11/site-packages')
 if os.path.isdir(_user_site) and _user_site not in sys.path:
     sys.path.insert(0, _user_site)
-# 添加系统 dist-packages（处理 pytz 等 deb 包）
-_sys_dist = '/usr/lib/python3/dist-packages'
-if os.path.isdir(_sys_dist) and _sys_dist not in sys.path:
-    sys.path.insert(1, _sys_dist)
+# 添加系统 dist-packages（仅 Linux，处理 pytz 等 deb 包）
+if sys.platform != 'win32':
+    _sys_dist = '/usr/lib/python3/dist-packages'
+    if os.path.isdir(_sys_dist) and _sys_dist not in sys.path:
+        sys.path.insert(1, _sys_dist)
 
 import gradio as gr
 from agents.chat_session import ChatSession
@@ -698,7 +699,7 @@ def delete_defect_by_id_fn(defect_id):
 
 
 def batch_delete_defect_fn(table_data):
-    """批量删除勾选的缺陷（有灵畿ID的自动跳过，保持本地与系统一致）"""
+    """批量删除勾选的缺陷（有灵畿ID的自动跳过）"""
     global _DEFECT_CACHE
     if table_data is None or len(table_data) == 0:
         return _build_defect_table(), "❌ 缺陷列表为空"
@@ -712,7 +713,6 @@ def batch_delete_defect_fn(table_data):
         cell0 = row[0]
         if (isinstance(cell0, bool) and cell0) or (isinstance(cell0, str) and cell0.strip() in ("True", "1", "☑")):
             did = _DEFECT_CACHE[i]['id']
-            # 有灵畿ID的不允许删除，保持本地与系统一致
             if _DEFECT_CACHE[i].get('lingji_id'):
                 skipped += 1
                 continue
@@ -720,9 +720,9 @@ def batch_delete_defect_fn(table_data):
             deleted += 1
     _DEFECT_CACHE.clear()
     new_table = _build_defect_table()
-    msg = f"🗑️ 已删除 {deleted} 条"
+    msg = f"已删除 {deleted} 条"
     if skipped:
-        msg += f"，⏭️ 跳过 {skipped} 条（已提交灵畿，需在灵畿平台操作）"
+        msg += f"，跳过 {skipped} 条（已提交灵畿，需在灵畿平台操作）"
     return new_table, msg
 
 
@@ -987,9 +987,9 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                             case_up_btn = gr.Button("⬆ 上移此行", scale=1)
                             case_down_btn = gr.Button("⬇ 下移此行", scale=1)
                         set_case_table = gr.Dataframe(
-                            headers=["", "用例名称", "AT指令", "超时(s)", "延迟(ms)"],
-                            datatype=["str", "str", "str", "str", "str"],
-                            column_count=5, interactive=True, row_count=20,
+                            headers=["", "用例名称", "AT指令", "期望值", "超时(s)", "延迟(ms)"],
+                            datatype=["str", "str", "str", "str", "str", "str"],
+                            column_count=6, interactive=True, row_count=20,
                             label="点击行选中→按钮操作",
                         )
                         selected_row = gr.State(value=None)
@@ -1015,10 +1015,11 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                         rows.append([f"{marker} #{i+1}",
                                      c.get('case_name', '')[:40],
                                      (c.get('at_cmd', '') or c.get('module', ''))[:45],
+                                     c.get('expected', '')[:60],
                                      str(c.get('timeout', 10)),
                                      str(c.get('delay', '') if c.get('delay') is not None else '')])
                     while len(rows) < PAD_ROWS:
-                        rows.append(["", "", "", "", ""])
+                        rows.append(["", "", "", "", "", ""])
                     return rows, f"### 用例集「{set_name}」共 {len(cases)} 条 · 点击行选中", None
 
                 set_radio.change(load_cases_to_table, [set_radio], [set_case_table, set_case_status, selected_row])
@@ -1078,17 +1079,16 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                         rows = []
                     cases = []
                     for r in rows:
-                        # 跳过空行和标记列
                         name = str(r[1]).strip() if len(r) > 1 else ""
                         cmd = str(r[2]).strip() if len(r) > 2 else ""
                         if not name or not cmd:
                             continue
-                        # 去掉名称中可能的标记前缀
-                        to = int(r[3]) if len(r) > 3 and str(r[3]).strip() else 10
-                        dl = int(r[4]) if len(r) > 4 and str(r[4]).strip() else None
+                        exp = str(r[3]).strip() if len(r) > 3 and str(r[3]).strip() else "OK"
+                        to = int(r[4]) if len(r) > 4 and str(r[4]).strip() else 10
+                        dl = int(r[5]) if len(r) > 5 and str(r[5]).strip() else None
                         cases.append({
                             "source": "custom", "at_cmd": cmd, "case_name": name[:40],
-                            "module": cmd, "expected": "OK", "timeout": to,
+                            "module": cmd, "expected": exp, "timeout": to,
                             "delay": dl if dl else None,
                         })
                     save_test_set(set_name, cases)
@@ -1169,9 +1169,9 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                     with gr.Column(scale=2, min_width=350):
                         gr.Markdown("### 方案用例")
                         plan_case_table = gr.Dataframe(
-                            headers=["☑", "用例集", "用例名称", "AT指令", "超时", "延迟"],
-                            datatype=["bool", "str", "str", "str", "str", "str"],
-                            column_count=6, interactive=True, row_count=15,
+                            headers=["☑", "用例集", "用例名称", "AT指令", "期望值", "超时", "延迟"],
+                            datatype=["bool", "str", "str", "str", "str", "str", "str"],
+                            column_count=7, interactive=True, row_count=15,
                             label="勾选→执行",
                         )
                         plan_exec_status = gr.Markdown("")
@@ -1192,7 +1192,7 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                         return [], ""
                     plan = load_plan(plan_name)
                     if not plan:
-                        return [], f"### ❌ 方案「{plan_name}」不存在"
+                        return [], f"### ❌ 方案「{plan_name}」文件损坏"
                     set_names = plan.get('test_set_names', [])
                     rows = []
                     for sn in set_names:
@@ -1203,16 +1203,19 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                             rows.append([False, sn,
                                          c.get('case_name', '')[:60],
                                          (c.get('at_cmd', '') or c.get('module', ''))[:200],
+                                         c.get('expected', '')[:80],
                                          str(c.get('timeout', 10)),
                                          str(c.get('delay', '') if c.get('delay') is not None else '')])
                     while len(rows) < 20:
-                        rows.append([False, "", "", "", "", ""])
+                        rows.append([False, "", "", "", "", "", ""])
                     return rows, f"### 方案「{plan_name}」共 {len([r for r in rows if r[1]])} 条（{len(set_names)} 个用例集）"
 
                 def on_plan_select(plan_name):
                     if not plan_name:
                         return refresh_plan_radio(), "", gr.CheckboxGroup(choices=[]), [], "", 1, 0
                     plan = load_plan(plan_name)
+                    if not plan:
+                        return refresh_plan_radio(), "### ❌ 方案文件损坏", gr.CheckboxGroup(choices=[]), [], "", 1, 0
                     all_sets = sorted(s.rstrip('_') for s in list_test_sets())
                     selected_sets = plan.get('test_set_names', [])
                     case_rows, msg = load_plan_cases(plan_name)
@@ -1298,11 +1301,13 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                     idx = 0
                     for r in rows:
                         if str(r[1]).strip():
+                            exp_val = str(r[4]).strip() if len(r) > 4 and str(r[4]).strip() else 'OK'
                             tc = TC(excel_file='', sheet_name=str(r[3])[:200] if len(r) > 3 else '',
                                     row_id=0, test_group=str(r[1]), case_name=str(r[2]) if len(r) > 2 else '',
                                     params={'send_data': str(r[3]) if len(r) > 3 else ''},
-                                    expected_results=['OK'], timeout=int(r[4]) if len(r) > 4 and str(r[4]).strip() else 10,
-                                    delay_after=int(r[5]) if len(r) > 5 and str(r[5]).strip() else 0)
+                                    expected_results=[exp_val],
+                                    timeout=int(r[5]) if len(r) > 5 and str(r[5]).strip() else 10,
+                                    delay_after=int(r[6]) if len(r) > 6 and str(r[6]).strip() else 0)
                             all_cases.append((str(r[1]), tc))
                             if r[0]: checked_indices.add(idx)
                             idx += 1
@@ -1391,6 +1396,20 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
                         except Exception as e:
                             yield (f"⚠️ 缺陷生成失败: {e}", "\n".join(log_lines))
 
+                    # 显示文件路径
+                    _base = os.path.dirname(os.path.abspath(__file__))
+                    log_rel = os.path.relpath(log_path, _base)
+                    result_path = os.path.join("data", "last_exec_result.json")
+                    defect_rel = "defects/"
+                    path_msg = (
+                        f"\n── 文件路径 ──\n"
+                        f"📄 执行日志: {log_rel}\n"
+                        f"📊 执行结果: {result_path}\n"
+                        f"🐛 本地缺陷: {defect_rel}\n"
+                    )
+                    log_lines.append(path_msg)
+                    yield (path_msg, "\n".join(log_lines))
+
                 exec_plan_btn.click(exec_plan, [plan_radio, plan_case_table, loop_count, loop_delay], [plan_exec_status, plan_exec_log])
 
                 # 初始加载
@@ -1421,6 +1440,7 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
             with gr.Column(scale=1, min_width=350):
                 with gr.Row():
                     batch_delete_btn = gr.Button("🗑️ 批量删除勾选", scale=1)
+                    refresh_defect_btn = gr.Button("🔄 刷新缺陷", scale=1)
                     defect_status = gr.Markdown(f"共 {len(_DEFECT_CACHE)} 条")
                 defect_table = gr.Dataframe(
                     value=_build_defect_table(),
@@ -1536,9 +1556,21 @@ with gr.Blocks(title="AI Native UART Tool", fill_height=True, fill_width=True) a
 
         # 表格点击查看详情
         defect_table.select(view_defect_by_row_fn, None, defect_detail)
-        # 批量删除
+        # 批量删除（仅删除）
         batch_delete_btn.click(batch_delete_defect_fn, [defect_table],
                                [defect_table, defect_status])
+        # 刷新缺陷（按筛选项）
+        def refresh_defect_with_filters(ds, de, models, versions):
+            ds_s = ds.strip() if ds and ds.strip() else None
+            de_s = de.strip() if de and de.strip() else None
+            if any([models, versions, ds_s, de_s]):
+                return filter_defect_table(models, versions, None, ds_s, de_s)
+            else:
+                table = _build_defect_table()
+                return table, f"### 💡 共 {len(table)} 条缺陷"
+        refresh_defect_btn.click(refresh_defect_with_filters,
+                                 [date_start, date_end, model_filter, ver_filter],
+                                 [defect_table, defect_status])
 
         # 手动创建缺陷
         def load_last_log():

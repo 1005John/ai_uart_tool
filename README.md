@@ -22,12 +22,24 @@
 
 ## 快速开始
 
+### macOS / Linux
 ```bash
 git clone git@github.com:1005John/ai_uart_tool.git
 cd ai_uart_tool
 python3 -m venv venv
 source venv/bin/activate
 pip install gradio pyserial pandas openpyxl httpx
+python webui.py
+# → http://localhost:7860
+```
+
+### Windows
+```powershell
+# 1. 安装 Python 3.11+（https://python.org）
+# 2. 安装依赖
+pip install gradio pandas pyserial requests openpyxl httpx
+# 3. 运行
+cd 项目目录
 python webui.py
 # → http://localhost:7860
 ```
@@ -53,5 +65,12 @@ ai_uart_tool/
 
 ## 部署
 
-树莓派 5 / Ubuntu / Debian，需 Python 3.10+ 和 USB 串口设备。
+### Linux（树莓派 5 / Ubuntu / Debian）
+需 Python 3.10+ 和 USB 串口设备。
 CLI 模式可用 `python main.py chat` 在终端直接交互。
+
+### Windows
+需 Python 3.11+。
+- **串口**: Windows 自动识别，无需额外驱动（CH340 / CP2102 需安装对应驱动）
+- **灵畿平台**: 如需提交缺陷，安装 `npm install -g @lingji/lc@0.3.2` 并执行 `lc login <token>`
+- **数据存储**: 所有运行时数据保存在项目 `data/` 和 `defects/` 目录下

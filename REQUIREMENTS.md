@@ -1,6 +1,6 @@
 # AI Native UART Tool — 需求规格说明
 
-> 版本：v1.4 | 日期：2026-06-03 | 状态：已确认
+> 版本：v1.5 | 日期：2026-06-04 | 状态：已确认
 
 ## 1. 项目背景
 
@@ -35,6 +35,7 @@
 | FR-PLAN-03 | 用例列表：可编辑表格，新增/编辑/删除用例 | P0 | ✅ |
 | FR-PLAN-04 | 方案支持配置循环执行次数 | P1 | ✅ |
 | FR-PLAN-05 | 从 23+ 模块的 Excel 文件加载用例 | P0 | ✅ |
+| FR-PLAN-06 | 用例支持自定义期望值，执行时按正则匹配校验 | P1 | ✅ |
 
 ### 测试执行
 
@@ -58,6 +59,7 @@
 | FR-DEFECT-05 | 本地缺陷与灵畿 ID 双向关联，已提交的禁止本地删除 | P1 | ✅ |
 | FR-DEFECT-06 | 缺陷提交自动导入知识图谱 | P1 | ✅ |
 | FR-DEFECT-07 | 灵畿登录工具（交互式引导 + 项目/责任人配置） | P1 | ✅ |
+| FR-DEFECT-08 | 缺陷列表"刷新"按钮（按筛选项刷新/默认全部） | P1 | ✅ |
 
 ### AI 对话
 
@@ -86,12 +88,12 @@
 | NFR-04 | 可靠性 | 数据库并发安全 | SQLite WAL 模式 |
 | NFR-05 | 可用性 | 串口连接失败时给出可读错误提示 | 非静默失败 |
 | NFR-06 | 安全 | API Key 不存储在项目仓库内 | 已在 v1.0 整改 |
-| NFR-07 | 跨平台 | 支持 Windows / macOS / Linux (树莓派/Ubuntu/Debian) | ✅ v1.0 |
+| NFR-07 | 跨平台 | 支持 Windows / macOS / Linux (树莓派/Ubuntu/Debian) | ✅ v1.5 |
 | NFR-08 | 可用性 | 不插串口时支持 Mock 模式 | ❌ 未实现 |
 
 ## 4. 约束与假设
 
-- 运行环境：树莓派 5 / Ubuntu / Debian / macOS，Python 3.10+
+- 运行环境：Windows / macOS / Linux (树莓派/Ubuntu/Debian)，Python 3.10+
 - 模组通过 USB 串口连接（vendor=0x3563 product=0x2000）
 - 测试用例以 Excel 文件形式提供（test_data/ 目录下 23+ 个 xlsx）
 - DeepSeek API 可正常访问

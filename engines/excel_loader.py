@@ -168,6 +168,8 @@ class ExcelTestLoader:
             os.path.expanduser("~/test_at/test_data_configs"),
             os.path.expanduser("~/code/test_at/test_data_configs"),
             "/tmp/test_at_repo/test_at/test_data_configs",
+            # Windows 候选目录
+            os.path.join(os.path.expanduser("~"), "test_data"),
             # 当前目录
             os.path.join(os.getcwd(), "test_data_configs"),
             os.path.join(os.path.dirname(os.path.dirname(__file__)), "test_data"),
